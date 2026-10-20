@@ -397,13 +397,14 @@
   let contractSearch = "";
   async function viewContracts() {
     const list = await api("v_contract_overview?select=*&order=contract_code");
+    const held = isStaff() ? new Set((await api("contracts?billing_hold=eq.true&select=id")).map((x) => x.id)) : new Set();
     const q = toEn(contractSearch).trim();
     const shown = q ? list.filter((c) => [c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].some((v) => toEn(v || "").includes(q))) : list;
     return shell(isExternal() ? "صورتحساب‌ها" : "قراردادها", "contracts", `
       ${list.length > 3 ? `<input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}"><div style="height:10px"></div>` : ""}
       ${shown.length ? shown.map((c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(toEn([c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].join(" ")))}">
         <div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
-        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}</div></div>
+        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div></div>
         <div style="text-align:left">${money(Math.abs(c.balance_rial), { cls: c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : "" })}${balanceBadge(c.balance_rial)}</div></div></div>`).join("") : `<div class="card empty">قراردادی پیدا نشد</div>`}`);
   }
 
@@ -414,6 +415,7 @@
     // drafts (opening balances waiting for approval) are shown to the CEO only
     const invoices = allInvoices.filter((i) => i.status !== "draft" || role() === "CEO");
     const [next] = await api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`);
+    const [hold] = await api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason`);
     const prev = c.previous_contract_id ? (await api(`contracts?id=eq.${c.previous_contract_id}&select=id,contract_code`))[0] : null;
     const opening = allInvoices.find((i) => i.document_type === "opening_balance" && i.status !== "cancelled");
     const changes = isStaff() ? await api(`contract_change_requests?contract_id=eq.${id}&select=id,kind,payload,status,document_number,requested_at,decided_at,decision_note&order=id.desc`) : [];
@@ -427,6 +429,7 @@
     if (can.recordPayment() && invoices.some((i) => !["cancelled", "draft"].includes(i.status) && Number(i.total_rial) > 0)) actions.push(`<button class="btn ok" data-act="pay" data-id="${id}">ثبت دریافت وجه</button>`);
     if (role() === "CEO" && (!opening || opening.status === "draft")) actions.push(`<button class="btn secondary" data-act="opening" data-id="${id}">${opening ? "مانده افتتاحیه (پیش‌نویس)" : "+ مانده افتتاحیه"}</button>`);
     actions.push(`<button class="btn secondary" data-act="contract-report" data-id="${id}">گزارش عملکرد</button>`);
+    if (role() === "CEO" && hold && !hold.billing_hold && c.status === "active") actions.push(`<button class="btn secondary" data-act="set-hold" data-id="${id}">تعلیق صورتحساب</button>`);
     if (can.changeContract()) {
       actions.push(`<button class="btn secondary" data-act="edit-contract" data-id="${id}">ویرایش اطلاعات</button>`);
       if (c.status === "active") actions.push(`<button class="btn secondary" data-act="amend" data-id="${id}">الحاقیه</button>`);
@@ -438,6 +441,8 @@
         <div class="small muted">${esc(c.building_address || "")}</div></div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
         ${next ? `<div class="small">تمدید شد: <a href="#/contract/${next.id}">قرارداد ${esc(fa(next.contract_code))}</a></div>` : ""}
         ${prev ? `<div class="small muted">دوره قبل: <a href="#/contract/${prev.id}">قرارداد ${esc(fa(prev.contract_code))}</a></div>` : ""}
+        ${hold && hold.billing_hold && isStaff() ? `<div class="error-box" style="margin:8px 0">صورتحساب این قرارداد معلق است: ${esc(hold.billing_hold_reason || "")}<div class="small">سرویس‌ها ثبت می‌شوند ولی صورتحساب صادر نمی‌شود؛ با رفع تعلیق، صورتحساب‌های عقب‌افتاده صادر می‌شوند.</div>
+          ${role() === "CEO" ? `<div class="actions"><button class="btn ok small" data-act="release-hold" data-id="${id}">رفع تعلیق و صدور صورتحساب‌ها</button></div>` : ""}</div>` : ""}
         <div style="margin:8px 0" class="${c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : ""}">مانده: ${money(Math.abs(c.balance_rial))}</div>
         <dl class="kv"><dt>مشتری</dt><dd>${esc(c.customer_name || "—")}</dd>
         <dt>مدیر ساختمان</dt><dd>${esc(c.manager_name || "—")} ${c.manager_mobile ? `<a href="tel:${esc(c.manager_mobile)}" class="ltr">${esc(fa(c.manager_mobile))}</a>` : ""}</dd>
@@ -486,7 +491,7 @@
     const pendingChanges = role() === "CEO" ? (await api("contract_change_requests?status=eq.pending&select=id")).length : 0;
     return shell("بیشتر", "more", `
       <div class="card"><div class="item-title">${esc(p.full_name || "")}</div><div class="small muted"><bdi dir="ltr">${esc(displayLogin())}</bdi> · ${esc(ROLE[p.role] || p.role)}</div>
-      <div class="actions"><button class="btn danger small" data-act="logout">خروج از حساب</button></div></div>
+      <div class="actions"><button class="btn secondary small" data-act="change-pw">تغییر رمز من</button><button class="btn danger small" data-act="logout">خروج از حساب</button></div></div>
       ${["CEO", "REPAIR_MANAGER"].includes(role()) ? `<div class="card tap" data-act="go-team"><div class="item-head"><div><div class="item-title">سرویس‌کارها و تعمیرکارها</div>
         <div class="small muted">تعریف، تخصص، فعال/غیرفعال${role() === "CEO" ? "، ساخت حساب ورود" : ""}</div></div><span>←</span></div></div>` : ""}
       ${role() === "CEO" ? `<div class="card tap" data-act="go-reports"><div class="item-head"><div><div class="item-title">گزارش‌های مالی</div>
@@ -763,6 +768,25 @@
     });
   }
 
+  function sheetChangePassword() {
+    sheet(`<h3>تغییر رمز من</h3>
+      <label>رمز جدید</label><input type="password" data-field="p1" class="ltr" autocomplete="new-password">
+      <label>تکرار رمز جدید</label><input type="password" data-field="p2" class="ltr" autocomplete="new-password">
+      <div class="hint">حداقل ۸ کاراکتر؛ ترکیب حرف و عدد پیشنهاد می‌شود.</div>
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const p1 = el.querySelector('[data-field="p1"]').value, p2 = el.querySelector('[data-field="p2"]').value;
+        if (p1.length < 8) throw new Error("رمز باید حداقل ۸ کاراکتر باشد");
+        if (p1 !== p2) throw new Error("دو رمز یکی نیستند");
+        const t = await token();
+        const res = await fetch(`${CFG.supabaseUrl}/auth/v1/user`, { method: "PUT", headers: { apikey: CFG.supabaseKey, Authorization: `Bearer ${t}`, "Content-Type": "application/json" }, body: JSON.stringify({ password: p1 }) });
+        if (!res.ok) { let d = {}; try { d = await res.json(); } catch (er) { /* ignore */ } throw new Error(/weak|short|pwned|leaked/i.test(JSON.stringify(d)) ? "این رمز ضعیف یا لو رفته است؛ رمز دیگری انتخاب کنید" : translateError(d)); }
+        close(); toast("رمز تغییر کرد");
+      }));
+    });
+  }
+
   async function sheetEditUser(id) {
     const [u] = await api(`user_profiles?id=eq.${id}&select=id,full_name,role,is_active`);
     const access = ["BUILDING_MANAGER", "EMPLOYER", "CLIENT"].includes(u.role) ? await api(`user_building_access?user_id=eq.${id}&select=id,building_id,is_active,buildings(name)`) : null;
@@ -776,10 +800,19 @@
           <button class="btn secondary small" data-act="toggle-access" data-id="${a.id}" data-on="${a.is_active}">${a.is_active ? "غیرفعال" : "فعال"}</button></div>`).join("") || `<div class="hint">هنوز ساختمانی تعیین نشده.</div>`}
         <div class="row" style="margin-top:8px"><select data-field="bld" style="flex:1">${buildings.map((b) => `<option value="${b.id}">${esc(b.name)}</option>`).join("")}</select>
         <button class="btn small" data-act="add-access">افزودن</button></div>` : ""}
-      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>بستن</button></div>`,
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-act="reset-pw">رمز جدید</button><button class="btn secondary" data-close>بستن</button></div>`,
     (el, close) => {
       el.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-act]"); if (!btn) return;
+        if (btn.dataset.act === "reset-pw") {
+          if (!confirm("برای این کاربر رمز جدید ساخته شود؟ رمز قبلی دیگر کار نمی‌کند.")) return;
+          const pw = randomPassword();
+          guarded(btn, async () => {
+            await callFunction("create-user", { action: "reset_password", user_id: id, password: pw });
+            const [p2] = await api(`user_profiles?id=eq.${id}&select=full_name,username,role`);
+            close(); showCredentials(p2.full_name || "", p2.username || "", pw, p2.role);
+          });
+        }
         if (btn.dataset.act === "save") guarded(btn, async () => {
           await api(`user_profiles?id=eq.${id}`, { method: "PATCH", body: { full_name: el.querySelector('[data-field="name"]').value.trim() || null,
             role: el.querySelector('[data-field="role"]').value, is_active: el.querySelector('[data-field="active"]').checked } });
@@ -871,7 +904,8 @@
       <div class="small muted">${esc(c.building_name || "")}</div>
       <label>شروع دوره جدید</label>${datePickerHtml("start", iso(start))}
       <label>پایان دوره جدید</label>${datePickerHtml("end", iso(newEnd))}
-      ${amountFieldHtml("monthly", "مبلغ ماهانه دوره جدید")}
+      ${amountFieldHtml("monthly", "مبلغ ماهانه دوره جدید (بدون ارزش افزوده)")}
+      <div class="hint">برای قراردادهایی که از ۱ دی ۱۴۰۵ به بعد شروع می‌شوند، سیستم ۱۰٪ ارزش افزوده را روی هر صورتحساب جدا اضافه می‌کند.</div>
       ${amountFieldHtml("ded", "کسر سرویس انجام‌نشده")}
       <label>تعداد سرویس در ماه</label><input type="text" inputmode="numeric" data-field="spm" class="ltr" placeholder="طبق قرارداد جدید">
       <div class="hint">همه‌ی مبالغ و شرایط مالی را از قرارداد جدید وارد کنید؛ چیزی از سال قبل منتقل نمی‌شود. فقط مشخصات فنی دستگاه‌ها و مانده‌ی حساب منتقل می‌شود.</div>
@@ -1722,6 +1756,17 @@
     }
     if (act === "new-user") sheetNewUser().catch((er) => toast(er.message));
     if (act === "logout") logout();
+    if (act === "change-pw") sheetChangePassword();
+    if (act === "set-hold") {
+      const reason = prompt("دلیل تعلیق صورتحساب (مثلاً مغایرت مبلغ در قرارداد):");
+      if (reason && reason.trim()) rpc("set_billing_hold", { p_contract_id: id, p_reason: reason.trim() }).then(() => { toast("صورتحساب معلق شد"); route(); }).catch((er) => toast(er.message));
+    }
+    if (act === "release-hold") {
+      if (confirm("تعلیق برداشته شود؟ برای سرویس‌های ثبت‌شده از آذر که صورتحساب ندارند، همین حالا صورتحساب صادر می‌شود.")) {
+        el.disabled = true;
+        rpc("release_billing_hold", { p_contract_id: id }).then((n) => { state.contracts = null; toast(`تعلیق برداشته شد؛ ${fa(n)} صورتحساب صادر شد`); route(); }).catch((er) => { el.disabled = false; toast(er.message); });
+      }
+    }
   });
 
   window.addEventListener("hashchange", () => { document.querySelectorAll(".sheet-backdrop").forEach((b) => b.remove()); route(); });

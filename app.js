@@ -268,23 +268,35 @@
   }
 
   /* ------------------------------------------------------------------ layout */
+  // line icons (24px grid, stroke = currentColor)
+  const ICONS = {
+    home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
+    alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v5"/><path d="M12 18v.01"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+    doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h7"/>',
+    more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+    wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.5-7.5a4 4 0 0 0-2-2z"/>'
+  };
+  const icon = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ""}</svg>`;
   function tabsFor() {
-    if (role() === "TECHNICIAN") return [["faults", "🛠", "کارهای من"], ["services", "✓", "سرویس‌ها"], ["more", "☰", "بیشتر"]];
-    if (isExternal()) return [["dashboard", "⌂", "خانه"], ["services", "✓", "سرویس‌ها"], ["faults", "⚠", "خرابی‌ها"], ["contracts", "🧾", "صورتحساب"], ["more", "☰", "بیشتر"]];
-    return [["dashboard", "⌂", "داشبورد"], ["faults", "⚠", "خرابی‌ها"], ["services", "✓", "سرویس‌ها"], ["contracts", "🧾", "قراردادها"], ["more", "☰", "بیشتر"]];
+    if (role() === "TECHNICIAN") return [["faults", "wrench", "کارهای من"], ["services", "check", "سرویس‌ها"], ["more", "more", "بیشتر"]];
+    if (isExternal()) return [["dashboard", "home", "خانه"], ["services", "check", "سرویس‌ها"], ["faults", "alert", "خرابی‌ها"], ["contracts", "doc", "صورتحساب"], ["more", "more", "بیشتر"]];
+    return [["dashboard", "home", "داشبورد"], ["faults", "alert", "خرابی‌ها"], ["services", "check", "سرویس‌ها"], ["contracts", "doc", "قراردادها"], ["more", "more", "بیشتر"]];
   }
   function shell(title, current, body) {
     const p = state.profile;
-    return `<header class="topbar"><div class="brand"><div class="logo">P</div><div><h1>${esc(title)}</h1>
+    return `<header class="topbar"><div class="brand"><img src="icons/mark.png" alt="پایاکو" class="logo"><div><h1>${esc(title)}</h1>
       <div class="who">${esc(p.full_name || displayLogin())} · ${esc(ROLE[p.role] || p.role)}</div></div></div></header>
       <main id="view">${body}</main>
-      <nav class="tabbar">${tabsFor().map(([k, ico, label]) => `<a href="#/${k}" class="${current === k ? "on" : ""}"><span class="ico">${ico}</span>${label}</a>`).join("")}</nav>`;
+      <nav class="tabbar"><div class="side-brand"><img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی"></div>
+        ${tabsFor().map(([k, ico, label]) => `<a href="#/${k}" class="${current === k ? "on" : ""}"><span class="ico">${icon(ico)}</span>${label}</a>`).join("")}
+        <div class="side-foot">${esc(p.full_name || "")}<br><span>${esc(ROLE[p.role] || p.role)}</span></div></nav>`;
   }
 
   /* ------------------------------------------------------------------ views */
   function viewLogin(error) {
     $app.innerHTML = `<div class="login-wrap"><form class="login-card" id="login">
-      <div class="logo-lg">P</div><h1>پایاکو</h1><p class="muted small">سامانه سرویس، تعمیرات و امور مالی</p>
+      <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="login-logo"><p class="muted small">سامانه سرویس، تعمیرات و امور مالی</p>
       <label for="email">نام کاربری</label><input id="email" type="text" class="ltr" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       <label for="password">رمز عبور</label><input id="password" type="password" class="ltr" autocomplete="current-password" required>
       <div style="height:14px"></div><button class="btn block" type="submit">ورود</button>
@@ -341,7 +353,10 @@
     const quick = [];
     if (can.reportFault()) quick.push(`<button class="btn" data-act="new-fault">+ ثبت خرابی</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="new-service">+ ثبت گزارش سرویس</button>`);
+    const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
+    const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
     return shell("داشبورد", "dashboard", `
+      <div class="hero"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div></div>
       ${closeNote}<div class="stats">${stats.join("")}</div>
       <div class="actions">${quick.join("")}</div>
       <div class="section-title"><h2>خرابی‌های باز</h2><a href="#/faults" class="small">همه</a></div>

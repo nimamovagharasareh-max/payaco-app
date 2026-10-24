@@ -322,3 +322,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 }
 @media (min-width: 1500px) { #view:has(> .card.tap:nth-of-type(4)) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media print { .side-brand, .side-foot { display: none !important; } .topbar, main { margin-right: 0 !important; } }
+
+/* designer credit */
+.nima-credit { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; font-size: 12px; color: var(--muted); }
+.nima-credit img { display: block; width: 21px; height: 16px; }
+.nima-credit .nima-name { font-family: Montserrat, "Segoe UI", system-ui, -apple-system, sans-serif; font-weight: 700; letter-spacing: .2px; color: var(--text); }

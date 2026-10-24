@@ -294,6 +294,8 @@
   }
 
   /* ------------------------------------------------------------------ views */
+  // designer credit shown on the login screen and the settings page
+  const NIMA_CREDIT = `<div class="nima-credit"><picture><source srcset="icons/nima-mark-dark.png" media="(prefers-color-scheme: dark)"><img src="icons/nima-mark.png" alt="" width="21" height="16"></picture><span>طراحی و توسعه: <bdi class="nima-name">NiMa</bdi></span></div>`;
   function viewLogin(error) {
     $app.innerHTML = `<div class="login-wrap"><form class="login-card" id="login">
       <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="login-logo"><p class="muted small">سامانه سرویس، تعمیرات و امور مالی</p>
@@ -301,7 +303,7 @@
       <label for="password">رمز عبور</label><input id="password" type="password" class="ltr" autocomplete="current-password" required>
       <div style="height:14px"></div><button class="btn block" type="submit">ورود</button>
       ${error ? `<div class="error-box">${esc(error)}</div>` : ""}
-      <p class="muted small" style="margin-top:14px">نسخه ${fa(CFG.version)}</p></form></div>`;
+      <p class="muted small" style="margin-top:14px">نسخه ${fa(CFG.version)}</p>${NIMA_CREDIT}</form></div>`;
     document.getElementById("login").addEventListener("submit", async (e) => {
       e.preventDefault();
       const btn = e.target.querySelector("button");
@@ -522,7 +524,7 @@
       ${role() === "CEO" ? `<div class="card tap" data-act="go-opening"><div class="item-head"><div><div class="item-title">مانده‌های افتتاحیه</div>
         <div class="small muted">بررسی و تأیید مانده‌ی حساب مشترکین تا پایان آبان ۱۴۰۵</div></div><span>←</span></div></div>` : ""}
       ${users}
-      <div class="hint" style="margin-top:16px">برای نصب روی آیفون: در Safari دکمه اشتراک‌گذاری ← Add to Home Screen. نسخه ${fa(CFG.version)}</div>`);
+      <div class="hint" style="margin-top:16px">برای نصب روی آیفون: در Safari دکمه اشتراک‌گذاری ← Add to Home Screen. نسخه ${fa(CFG.version)}</div>${NIMA_CREDIT}`);
   }
 
   /* ------------------------------------------------------------------ sheets (forms) */

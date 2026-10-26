@@ -275,7 +275,14 @@
     check: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
     doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h7"/>',
     more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
-    wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.5-7.5a4 4 0 0 0-2-2z"/>'
+    wrench: '<path d="M14.5 6.5a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.5-7.5a4 4 0 0 0-2-2z"/>',
+    siren: '<path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 18h14v3H5z"/><path d="M12 2v2M4.2 5.2l1.4 1.4M19.8 5.2l-1.4 1.4"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    receipt: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+    building: '<path d="M5 21V4h10v17"/><path d="M15 9h4v12"/><path d="M8 8h1M11 8h1M8 12h1M11 12h1M8 16h1M11 16h1"/><path d="M3 21h18"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    wallet: '<path d="M4 7h15a1 1 0 0 1 1 1v11H4a1 1 0 0 1-1-1V6a2 2 0 0 1 2-2h12v3"/><path d="M16 13h.01"/>',
+    up: '<path d="M12 4l7 9H5z"/>'
   };
   const icon = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ""}</svg>`;
   function tabsFor() {
@@ -322,16 +329,17 @@
     const d = await rpc("get_dashboard");
     const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
     const stats = [];
-    stats.push(`<div class="stat ${d.emergency_faults ? "danger" : ""}"><div class="label">خرابی اضطراری باز</div><div class="value">${num(d.emergency_faults)}</div></div>`);
-    stats.push(`<div class="stat"><div class="label">خرابی‌های باز</div><div class="value">${num(d.open_faults)}</div></div>`);
-    stats.push(`<div class="stat ${d.pending_services ? "warn" : ""}"><div class="label">سرویس منتظر تأیید</div><div class="value">${num(d.pending_services)}</div></div>`);
-    stats.push(`<div class="stat"><div class="label">اسناد پرداخت‌نشده</div><div class="value">${num(d.open_invoices)}</div></div>`);
+    const st = (ico, label, v, cls = "") => `<div class="stat ${cls}"><span class="stat-ico">${icon(ico)}</span><div class="label">${label}</div><div class="value">${num(v)}</div></div>`;
+    stats.push(st("siren", "خرابی اضطراری باز", d.emergency_faults, d.emergency_faults ? "danger" : "calm"));
+    stats.push(st("alert", "خرابی‌های باز", d.open_faults, "tone-info"));
+    stats.push(st("clock", "سرویس منتظر تأیید", d.pending_services, d.pending_services ? "warn" : "calm"));
+    stats.push(st("receipt", "اسناد پرداخت‌نشده", d.open_invoices, "tone-brand"));
     if (isStaff()) {
-      stats.push(`<div class="stat"><div class="label">قرارداد فعال</div><div class="value">${num(d.active_contracts)}</div></div>`);
-      stats.push(`<div class="stat ${d.expiring_contracts ? "warn" : ""}"><div class="label">پایان قرارداد تا ۳۰ روز</div><div class="value">${num(d.expiring_contracts)}</div></div>`);
+      stats.push(st("building", "قرارداد فعال", d.active_contracts, "tone-brand"));
+      stats.push(st("calendar", "پایان قرارداد تا ۳۰ روز", d.expiring_contracts, d.expiring_contracts ? "warn" : "calm"));
     }
     if (d.receivable_rial !== null && d.receivable_rial !== undefined) {
-      stats.push(`<div class="stat wide"><div class="label">${isExternal() ? "مانده حساب شما" : "مانده کل مطالبات"}</div><div class="value">${money(d.receivable_rial)}</div></div>`);
+      stats.push(`<div class="stat wide money-stat"><span class="stat-ico">${icon("wallet")}</span><div class="label">${isExternal() ? "مانده حساب شما" : "مانده کل مطالبات"}</div><div class="value">${money(d.receivable_rial)}</div></div>`);
     }
     let closeNote = "";
     if (["CEO", "EMPLOYEE"].includes(role())) {
@@ -356,9 +364,10 @@
     if (can.reportFault()) quick.push(`<button class="btn" data-act="new-fault">+ ثبت خرابی</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="new-service">+ ثبت گزارش سرویس</button>`);
     const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
+    const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
     return shell("داشبورد", "dashboard", `
-      <div class="hero"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div></div>
+      <div class="hero"><div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
       ${closeNote}<div class="stats">${stats.join("")}</div>
       <div class="actions">${quick.join("")}</div>
       <div class="section-title"><h2>خرابی‌های باز</h2><a href="#/faults" class="small">همه</a></div>
@@ -420,8 +429,8 @@
     return shell(isExternal() ? "صورتحساب‌ها" : "قراردادها", "contracts", `
       ${list.length > 3 ? `<input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}"><div style="height:10px"></div>` : ""}
       ${shown.length ? shown.map((c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(toEn([c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].join(" ")))}">
-        <div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
-        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div></div>
+        <div class="item-head"><div class="with-key"><span class="call-key" title="کد قرارداد">${esc(fa(String(c.contract_code).split("-")[0]))}</span><div><div class="item-title">${esc(c.building_name || "")}</div>
+        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div></div></div>
         <div style="text-align:left">${money(Math.abs(c.balance_rial), { cls: c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : "" })}${balanceBadge(c.balance_rial)}</div></div></div>`).join("") : `<div class="card empty">قراردادی پیدا نشد</div>`}`);
   }
 

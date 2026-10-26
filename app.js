@@ -305,7 +305,7 @@
   const NIMA_CREDIT = `<div class="nima-credit"><picture><source srcset="icons/nima-mark-dark.png" media="(prefers-color-scheme: dark)"><img src="icons/nima-mark.png" alt="" width="21" height="16"></picture><span>طراحی و توسعه: <bdi class="nima-name">NiMa</bdi></span></div>`;
   function viewLogin(error) {
     $app.innerHTML = `<div class="login-wrap"><form class="login-card" id="login">
-      <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="login-logo"><p class="muted small">سامانه سرویس، تعمیرات و امور مالی</p>
+      <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="login-logo"><p class="muted small">سامانه‌ی جامع اتوماسیون اداری پایاکو</p>
       <label for="email">نام کاربری</label><input id="email" type="text" class="ltr" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       <label for="password">رمز عبور</label><input id="password" type="password" class="ltr" autocomplete="current-password" required>
       <div style="height:14px"></div><button class="btn block" type="submit">ورود</button>

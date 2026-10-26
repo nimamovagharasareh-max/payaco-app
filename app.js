@@ -339,7 +339,7 @@
         const [setting] = await api("app_settings?key=eq.billing_start&select=value");
         const t = toEn(todayTehran()).split("-").map(Number), tj = g2j(t[0], t[1], t[2]);
         const prevYM = tj.jm === 1 ? (tj.jy - 1) * 100 + 12 : tj.jy * 100 + tj.jm - 1;
-        const [sy, sm] = (setting ? setting.value : "1405-09").split("-").map(Number);
+        const [sy, sm] = (setting ? setting.value : "1405-08").split("-").map(Number);
         if (prevYM >= sy * 100 + sm) {
           const c = await api(`month_closes?jalali_year=eq.${Math.floor(prevYM / 100)}&jalali_month=eq.${prevYM % 100}&status=eq.closed&select=id`);
           if (!c.length) closeNote = `<div class="card tap" data-act="go-close" style="border-color:var(--warn)"><div class="item-title">ماه ${MONTHS[prevYM % 100 - 1]} ${fa(Math.floor(prevYM / 100))} هنوز بسته نشده</div><div class="small muted">برای ثبت سرویس‌های انجام‌نشده و صدور صورتحساب‌ها، ماه را ببندید.</div></div>`;
@@ -863,7 +863,7 @@
         <div style="text-align:left">${money(Math.abs(v), { cls: v > 0 ? "debt" : v < 0 ? "credit" : "" })}${balanceBadge(v)}</div></div></div>`; };
     return shell("مانده‌های افتتاحیه", "more", `
       <a href="#/more" class="small">→ بازگشت</a>
-      <div class="card" style="margin-top:8px"><div class="small">مانده‌ی هر مشترک تا پایان ۳۰ آبان ۱۴۰۵. از آذر ۱۴۰۵ صورتحساب‌ها را سیستم صادر می‌کند.</div>
+      <div class="card" style="margin-top:8px"><div class="small">مانده‌ی هر مشترک تا پایان ۳۰ مهر ۱۴۰۵. از آبان ۱۴۰۵ صورتحساب‌ها را سیستم صادر می‌کند.</div>
         <div class="small muted">این سند داخلی است و شماره نمی‌گیرد؛ ثبت‌کننده و تأییدکننده ذخیره می‌شود.</div></div>
       <div class="stats" style="margin-top:10px">
         <div class="stat warn"><div class="label">پیش‌نویس منتظر تأیید</div><div class="value">${num(drafts.length)}</div></div>
@@ -881,7 +881,7 @@
     const cur = d && d.invoice_items && d.invoice_items[0];
     const dir = cur ? (cur.debit_credit === "credit" ? "credit" : Number(cur.amount_rial) ? "debit" : "zero") : "debit";
     sheet(`<h3>مانده افتتاحیه — قرارداد ${esc(fa(c.contract_code))}</h3>
-      <div class="small muted">${esc(c.building_name || "")} · مانده تا پایان ۳۰ آبان ۱۴۰۵</div>
+      <div class="small muted">${esc(c.building_name || "")} · مانده تا پایان ۳۰ مهر ۱۴۰۵</div>
       <label>وضعیت حساب مشترک</label>
       <div class="seg" data-field="dir"><button type="button" data-v="debit" class="${dir === "debit" ? "on" : ""}">بدهکار</button><button type="button" data-v="credit" class="${dir === "credit" ? "on" : ""}">بستانکار</button><button type="button" data-v="zero" class="${dir === "zero" ? "on" : ""}">تسویه</button></div>
       <div data-show="amt">${amountFieldHtml("amt", "مبلغ مانده")}</div>
@@ -1056,7 +1056,7 @@
   let closeYM = null;
   async function viewMonthClose() {
     const [setting] = await api("app_settings?key=eq.billing_start&select=value");
-    const [sy, sm] = (setting ? setting.value : "1405-09").split("-").map(Number);
+    const [sy, sm] = (setting ? setting.value : "1405-08").split("-").map(Number);
     const t = toEn(todayTehran()).split("-").map(Number), tj = g2j(t[0], t[1], t[2]);
     // months from the billing start up to the last finished month
     const months = []; let y = sy, m = sm;
@@ -1779,7 +1779,7 @@
       if (reason && reason.trim()) rpc("set_billing_hold", { p_contract_id: id, p_reason: reason.trim() }).then(() => { toast("صورتحساب معلق شد"); route(); }).catch((er) => toast(er.message));
     }
     if (act === "release-hold") {
-      if (confirm("تعلیق برداشته شود؟ برای سرویس‌های ثبت‌شده از آذر که صورتحساب ندارند، همین حالا صورتحساب صادر می‌شود.")) {
+      if (confirm("تعلیق برداشته شود؟ برای سرویس‌های ثبت‌شده از شروع صورتحساب (آبان ۱۴۰۵) که صورتحساب ندارند، همین حالا صورتحساب صادر می‌شود.")) {
         el.disabled = true;
         rpc("release_billing_hold", { p_contract_id: id }).then((n) => { state.contracts = null; toast(`تعلیق برداشته شد؛ ${fa(n)} صورتحساب صادر شد`); route(); }).catch((er) => { el.disabled = false; toast(er.message); });
       }

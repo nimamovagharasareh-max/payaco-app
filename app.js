@@ -1339,7 +1339,7 @@
       <label>تاریخ سرویس</label>${datePickerHtml("sdate")}
       <label>شماره گزارش (برگه سرویس)</label><input type="text" data-field="rno" class="ltr" inputmode="numeric">
       <label>توضیحات</label><textarea data-field="text" placeholder="کارهای انجام‌شده، ایرادهای دیده‌شده"></textarea>
-      <div class="hint">بعد از ثبت، مدیر ساختمان یا مدیر تعمیرات تأیید می‌کند.</div>
+      <div class="hint">بعد از ثبت، مدیر ساختمان، مدیر تعمیرات یا مدیرعامل تأیید می‌کند.</div>
       <div class="actions"><button class="btn" data-act="save">ثبت</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       const sel = el.querySelector('[data-field="contract"]');

@@ -386,3 +386,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .nima-credit { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 16px; font-size: 12px; color: var(--muted); }
 .nima-credit img { display: block; width: 21px; height: 16px; }
 .nima-credit .nima-name { font-family: Montserrat, "Segoe UI", system-ui, -apple-system, sans-serif; font-weight: 700; letter-spacing: .2px; color: var(--text); }
+
+/* M27: service assignment picker */
+.pick-list { max-height: 46vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; margin-top: 6px; background: var(--surface); }
+.pick { margin: 0; font-weight: 400; color: var(--text); display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 14px; line-height: 1.6; }
+.pick:last-child { border-bottom: 0; }
+.pick input { width: 20px; height: 20px; margin-top: 3px; flex: 0 0 auto; accent-color: var(--brand); }
+.pick:has(input:checked) { background: color-mix(in srgb, var(--brand) 8%, transparent); }
+.actions a.btn { text-decoration: none; display: inline-flex; align-items: center; }

@@ -400,7 +400,7 @@
     const list = await api(`service_reports?select=id,report_number,service_date,service_year,service_month,status,report_text,notes,rejection_note,contract_id,contracts(contract_code,buildings(name))&order=service_date.desc,id.desc&limit=100${filt}`);
     const chips = [["pending", "منتظر تأیید"], ["all", "همه"]];
     const top = [];
-    if (isStaff()) top.push(`<button class="btn" data-act="new-service">+ گزارش سرویس</button>`);
+    if (isStaff()) top.push(`<button class="btn" data-act="go-plan">برنامه و ارجاع سرویس</button>`, `<button class="btn secondary" data-act="new-service">+ گزارش سرویس</button>`);
     if (can.recordMissed()) top.push(`<button class="btn secondary" data-act="new-missed">ثبت سرویس انجام‌نشده</button>`);
     return shell("سرویس‌ها", "services", `
       <div class="row">${top.join("")}</div><div style="height:10px"></div>
@@ -461,7 +461,10 @@
       if (c.status === "active") actions.push(`<button class="btn secondary" data-act="amend" data-id="${id}">الحاقیه</button>`);
       if (!next && ["active", "expired"].includes(c.status)) actions.push(`<button class="btn secondary" data-act="renew" data-id="${id}">تمدید قرارداد</button>`);
     }
-    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `
+    const locCard = ["BUILDING_MANAGER", "EMPLOYER"].includes(role()) ? `<div class="card"><div class="item-title">موقعیت ساختمان برای مسیریابی سرویس‌کار</div>
+      <div class="small muted">داخل یا جلوی ساختمان دکمه را بزنید؛ پس از تأیید مدیر تعمیرات، سرویس‌کارها با یک لمس مسیریابی می‌کنند.</div>
+      <div class="actions"><button class="btn secondary small" data-act="send-location" data-bid="${c.building_id}">ارسال موقعیت ساختمان</button></div></div>` : "";
+    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${locCard}
       <a href="#/contracts" class="small">→ بازگشت</a>
       <div class="card" style="margin-top:8px"><div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
         <div class="small muted">${esc(c.building_address || "")}</div></div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
@@ -515,9 +518,14 @@
         <div class="hint">کاربر جدید با نام کاربری و رمز اولیه ساخته می‌شود؛ هر دو را به خودش بدهید.</div>`;
     }
     const pendingChanges = role() === "CEO" ? (await api("contract_change_requests?status=eq.pending&select=id")).length : 0;
+    const pendingLocs = ["CEO", "REPAIR_MANAGER"].includes(role()) ? (await rpc("pending_building_locations").catch(() => [])).length : 0;
     return shell("بیشتر", "more", `
       <div class="card"><div class="item-title">${esc(p.full_name || "")}</div><div class="small muted"><bdi dir="ltr">${esc(displayLogin())}</bdi> · ${esc(ROLE[p.role] || p.role)}</div>
       <div class="actions"><button class="btn secondary small" data-act="change-pw">تغییر رمز من</button><button class="btn danger small" data-act="logout">خروج از حساب</button></div></div>
+      ${isStaff() ? `<div class="card tap" data-act="go-plan"><div class="item-head"><div><div class="item-title">برنامه و ارجاع سرویس</div>
+        <div class="small muted">ارجاع سرویس‌های هر روز به سرویس‌کارها</div></div><span>←</span></div></div>` : ""}
+      ${["CEO", "REPAIR_MANAGER"].includes(role()) ? `<div class="card tap" data-act="go-locations"><div class="item-head"><div><div class="item-title">موقعیت ساختمان‌ها</div>
+        <div class="small muted">تأیید موقعیت‌های ارسالی برای مسیریابی</div></div>${pendingLocs ? `<span class="badge warn">${fa(pendingLocs)} منتظر</span>` : "<span>←</span>"}</div></div>` : ""}
       ${["CEO", "REPAIR_MANAGER"].includes(role()) ? `<div class="card tap" data-act="go-team"><div class="item-head"><div><div class="item-title">سرویس‌کارها و تعمیرکارها</div>
         <div class="small muted">تعریف، تخصص، فعال/غیرفعال${role() === "CEO" ? "، ساخت حساب ورود" : ""}</div></div><span>←</span></div></div>` : ""}
       ${role() === "CEO" ? `<div class="card tap" data-act="go-reports"><div class="item-head"><div><div class="item-title">گزارش‌های مالی</div>
@@ -1322,14 +1330,121 @@
     const canService = me && me.status === "active" && (me.skills || []).includes("service");
     const list = me ? await api(`service_reports?technician_id=eq.${me.id}&select=id,report_number,service_date,service_year,service_month,status,report_text,rejection_note,contract_id&order=service_date.desc,id.desc&limit=100`) : [];
     const targets = canService ? await rpc("service_targets") : [];
+    const asg = me ? await rpc("my_assignments", { p_from: addDays(todayTehran(), -45), p_to: null }) : [];
+    const open = asg.filter((a) => a.status === "planned");
     const nameOf = new Map(targets.map((t) => [t.contract_id, `${t.building_name} (${t.contract_code})`]));
+    asg.forEach((a) => nameOf.set(a.contract_id, `${a.building_name} (${a.contract_code})`));
     return shell("سرویس‌های من", "services", `
-      ${canService ? `<div class="row"><button class="btn" data-act="tech-new-service">+ ثبت سرویس</button></div><div style="height:10px"></div>` : `<div class="card empty small">ثبت سرویس فقط برای سرویس‌کارهاست.</div>`}
+      <div class="section-title"><h2>ارجاع‌های من</h2></div>
+      ${open.length ? open.map((a) => assignmentCard(a, true)).join("") : `<div class="card empty">سرویسی به شما ارجاع نشده است</div>`}
+      <div class="section-title"><h2>سرویس‌های ثبت‌شده</h2></div>
       ${list.length ? list.map((x) => `<div class="card"><div class="item-head"><div><div class="item-title">${esc(nameOf.get(x.contract_id) || "قرارداد " + fa(x.contract_id))}</div>
         <div class="small muted">${jdate(x.service_date)}${x.report_number ? " · گزارش " + esc(fa(x.report_number)) : ""}</div></div>${badge(SERVICE_STATUS, x.status)}</div>
         ${x.rejection_note ? `<div class="small debt">دلیل رد: ${esc(x.rejection_note)}</div>` : ""}</div>`).join("") : `<div class="card empty">سرویسی ثبت نکرده‌اید</div>`}`);
   }
-  async function sheetTechService() {
+  function addDays(iso, n) { const d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  function dayLabel(iso) {
+    const t = todayTehran();
+    if (iso === t) return "امروز"; if (iso === addDays(t, 1)) return "فردا"; if (iso === addDays(t, -1)) return "دیروز";
+    return jdate(iso);
+  }
+  function navButtons(lat, lng) {
+    return `<a class="btn small" href="https://nshn.ir/?lat=${lat}&lng=${lng}" target="_blank" rel="noopener">مسیریابی با نشان</a>
+      <a class="btn secondary small" href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}" target="_blank" rel="noopener">گوگل‌مپ</a>`;
+  }
+  // forTech: technician card (record + navigation + location); otherwise the office plan card (cancel)
+  function assignmentCard(a, forTech) {
+    const late = a.status === "planned" && a.planned_date < todayTehran();
+    const acts = [];
+    if (forTech) {
+      acts.push(`<button class="btn ok small" data-act="tech-new-service" data-cid="${a.contract_id}">ثبت سرویس</button>`);
+      if (a.lat != null) acts.push(navButtons(a.lat, a.lng));
+      else if (!a.loc_pending) acts.push(`<button class="btn secondary small" data-act="send-location" data-bid="${a.building_id}">ثبت موقعیت ساختمان</button>`);
+    } else if (a.status === "planned") {
+      acts.push(`<button class="btn secondary small" data-act="cancel-assignment" data-id="${a.id}">لغو ارجاع</button>`);
+    }
+    const st = a.status === "done" ? `<span class="badge ok">ثبت شد</span>` : a.status === "cancelled" ? `<span class="badge">لغو شده</span>` : late ? `<span class="badge danger">عقب‌افتاده</span>` : `<span class="badge info">${dayLabel(a.planned_date)}</span>`;
+    return `<div class="card"><div class="item-head"><div class="with-key"><span class="call-key">${esc(fa(String(a.contract_code).split("-")[0]))}</span><div>
+      <div class="item-title">${esc(a.building_name || "")}</div>
+      <div class="small muted">${[forTech ? jdate(a.planned_date) : "", esc(a.address || "")].filter(Boolean).join(" · ")}</div></div></div>${st}</div>
+      ${a.manager_mobile && forTech ? `<div class="small">مدیر ساختمان: ${esc(a.manager_name || "")} <a href="tel:${esc(toEn(a.manager_mobile))}" class="ltr">${esc(fa(a.manager_mobile))}</a></div>` : ""}
+      ${a.note ? `<div class="small muted">${txt(a.note)}</div>` : ""}
+      ${forTech && a.lat == null && a.loc_pending ? `<div class="small muted">موقعیت ساختمان ثبت شده و منتظر تأیید مدیر تعمیرات است.</div>` : ""}
+      ${acts.length ? `<div class="actions">${acts.join("")}</div>` : ""}</div>`;
+  }
+  async function sendLocation(buildingId) {
+    if (!navigator.geolocation) throw new Error("این گوشی موقعیت‌یاب ندارد");
+    toast("در حال گرفتن موقعیت… داخل یا جلوی ساختمان باشید");
+    const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, (e) => no(new Error(e.code === 1 ? "اجازه‌ی دسترسی به موقعیت داده نشد؛ از تنظیمات مرورگر اجازه دهید" : "موقعیت گرفته نشد؛ دوباره امتحان کنید")), { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }));
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    if (!confirm(`موقعیت با دقت حدود ${fa(Math.round(accuracy))} متر گرفته شد. برای تأیید مدیر تعمیرات فرستاده شود؟`)) return;
+    await rpc("submit_building_location", { p_building_id: Number(buildingId), p_lat: lat, p_lng: lng });
+    toast("موقعیت ثبت شد؛ پس از تأیید مدیر تعمیرات مسیریابی فعال می‌شود"); route();
+  }
+
+  /* office: daily service plan and assignment (D-50) */
+  let planDate = null;
+  async function viewPlan() {
+    if (!planDate) planDate = addDays(todayTehran(), 1);
+    const rows = await rpc("my_assignments", { p_from: planDate, p_to: planDate });
+    const byTech = new Map();
+    rows.filter((a) => a.status !== "cancelled").forEach((a) => { if (!byTech.has(a.technician_name)) byTech.set(a.technician_name, []); byTech.get(a.technician_name).push(a); });
+    return shell("برنامه سرویس", "services", `
+      <div class="card"><label>روز برنامه</label>${datePickerHtml("pday", planDate)}
+        <div class="actions"><button class="btn secondary small" data-act="plan-day" data-d="-1">روز قبل</button><button class="btn secondary small" data-act="plan-go">نمایش</button><button class="btn secondary small" data-act="plan-day" data-d="1">روز بعد</button></div></div>
+      <div class="row"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button></div>
+      <div class="section-title"><h2>${dayLabel(planDate)} · ${fa(rows.filter((a) => a.status !== "cancelled").length)} سرویس</h2></div>
+      ${byTech.size ? [...byTech.entries()].map(([t, list]) => `<div class="section-title"><h2 class="small">${esc(t)} (${fa(list.length)})</h2></div>${list.map((a) => assignmentCard(a, false)).join("")}`).join("")
+        : `<div class="card empty">برای این روز سرویسی ارجاع نشده است</div>`}`);
+  }
+  async function sheetNewAssignment() {
+    const techs = (await api("technicians?status=eq.active&select=id,name,skills&order=name")).filter((t) => (t.skills || []).includes("service"));
+    const targets = await rpc("service_targets");
+    sheet(`<h3>ارجاع سرویس</h3>
+      <label>سرویس‌کار</label><select data-field="tech">${techs.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select>
+      <label>روز سرویس</label>${datePickerHtml("adate", planDate || addDays(todayTehran(), 1))}
+      <label>ساختمان‌ها <span class="small muted" data-field="cnt"></span></label>
+      <input type="search" data-field="q" placeholder="جست‌وجوی ساختمان، کد یا آدرس">
+      <div class="pick-list" data-field="list">${targets.map((t) => `<label class="pick" data-s="${esc(toEn(t.building_name + " " + t.contract_code + " " + (t.address || "")))}"><input type="checkbox" value="${t.contract_id}">
+        <span><b>${esc(fa(t.contract_code))}</b> — ${esc(t.building_name)}<br><span class="small muted">${esc(t.address || "")}</span></span></label>`).join("")}</div>
+      <label>توضیح برای سرویس‌کار</label><input type="text" data-field="note" placeholder="اختیاری">
+      <div class="actions"><button class="btn" data-act="save">ارجاع</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      const cnt = () => { el.querySelector('[data-field="cnt"]').textContent = `(${fa(el.querySelectorAll(".pick input:checked").length)} انتخاب)`; };
+      el.querySelector('[data-field="list"]').addEventListener("change", cnt); cnt();
+      el.querySelector('[data-field="q"]').addEventListener("input", (e) => {
+        const q = toEn(e.target.value).trim();
+        el.querySelectorAll(".pick").forEach((o) => { o.style.display = !q || o.dataset.s.includes(q) ? "" : "none"; });
+      });
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const ids = [...el.querySelectorAll(".pick input:checked")].map((i) => Number(i.value));
+        if (!ids.length) throw new Error("حداقل یک ساختمان انتخاب کنید");
+        const day = readDate(el, "adate"), tech = Number(el.querySelector('[data-field="tech"]').value), note = el.querySelector('[data-field="note"]').value.trim() || null;
+        try {
+          await api("service_assignments", { method: "POST", body: ids.map((cid) => ({ contract_id: cid, technician_id: tech, planned_date: day, note })) });
+        } catch (er) {
+          if (/duplicate|unique|23505/i.test(er.message)) throw new Error("یکی از این ساختمان‌ها برای همین روز قبلاً ارجاع شده است");
+          throw er;
+        }
+        planDate = day; close(); toast(`${fa(ids.length)} سرویس ارجاع شد`); location.hash = "#/plan"; route();
+      }));
+    });
+  }
+
+  /* repair manager / CEO: approve building locations (D-51) */
+  async function viewLocations() {
+    const rows = await rpc("pending_building_locations");
+    return shell("موقعیت ساختمان‌ها", "more", `
+      <div class="hint">موقعیت‌هایی که سرویس‌کار یا مدیر ساختمان فرستاده؛ روی نقشه ببینید و تأیید کنید. بعد از تأیید، دکمه‌ی مسیریابی روی هر ارجاع همان ساختمان فعال می‌شود.</div>
+      ${rows.length ? rows.map((r) => `<div class="card"><div class="item-title">${esc(r.building_name)}</div>
+        <div class="small muted">${esc(r.address || "")}</div>
+        <div class="small muted">فرستنده: ${esc(r.submitted_by_name || "—")} · ${r.submitted_at ? jdate(String(r.submitted_at).slice(0, 10)) : ""}${r.old_lat != null ? " · جایگزین موقعیت قبلی" : ""}</div>
+        <div class="actions"><a class="btn secondary small" href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}" target="_blank" rel="noopener">دیدن روی نقشه</a>
+          <a class="btn secondary small" href="https://nshn.ir/?lat=${r.lat}&lng=${r.lng}" target="_blank" rel="noopener">در نشان</a>
+          <button class="btn ok small" data-act="loc-decide" data-id="${r.building_id}" data-ok="1">تأیید</button>
+          <button class="btn danger small" data-act="loc-decide" data-id="${r.building_id}" data-ok="0">رد</button></div></div>`).join("") : `<div class="card empty">موقعیتی منتظر تأیید نیست</div>`}`);
+  }
+  async function sheetTechService(preCid) {
     const me = await myTech();
     const targets = await rpc("service_targets");
     sheet(`<h3>ثبت سرویس</h3>
@@ -1343,8 +1458,9 @@
       <div class="actions"><button class="btn" data-act="save">ثبت</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       const sel = el.querySelector('[data-field="contract"]');
+      if (preCid) sel.value = String(preCid);
       const info = () => { const t = targets.find((x) => String(x.contract_id) === sel.value); el.querySelector('[data-field="info"]').textContent = t ? `${t.address || ""}${t.manager_name ? " · مدیر: " + t.manager_name : ""}` : ""; };
-      sel.addEventListener("change", info);
+      sel.addEventListener("change", info); if (preCid) info();
       el.querySelector('[data-field="q"]').addEventListener("input", (e) => {
         const q = toEn(e.target.value).trim();
         Array.from(sel.options).forEach((o) => { o.hidden = !!q && !o.dataset.s.includes(q); });
@@ -1644,6 +1760,8 @@
       switch (page || def) {
         case "faults": html = await viewFaults(); break;
         case "services": html = role() === "TECHNICIAN" ? await viewTechServices() : await viewServices(); break;
+        case "plan": html = isStaff() ? await viewPlan() : await viewDashboard(); break;
+        case "locations": html = ["CEO", "REPAIR_MANAGER"].includes(role()) ? await viewLocations() : await viewDashboard(); break;
         case "team": html = ["CEO", "REPAIR_MANAGER"].includes(role()) ? await viewTeam() : await viewDashboard(); break;
         case "contracts": html = role() === "TECHNICIAN" ? await viewFaults() : await viewContracts(); break;
         case "contract": html = await viewContract(Number(arg)); break;
@@ -1710,7 +1828,15 @@
     if (act === "new-tech") sheetTech(null).catch((er) => toast(er.message));
     if (act === "edit-tech") sheetTech(id).catch((er) => toast(er.message));
     if (act === "tech-account") loadTechs().then((l) => { const t = l.find((x) => x.id === id); return sheetNewUser({ role: "TECHNICIAN", name: t.name, mobile: t.mobile, technician_id: t.id }); }).catch((er) => toast(er.message));
-    if (act === "tech-new-service") sheetTechService().catch((er) => toast(er.message));
+    if (act === "tech-new-service") sheetTechService(el.dataset.cid).catch((er) => toast(er.message));
+    if (act === "send-location") { el.disabled = true; sendLocation(el.dataset.bid).catch((er) => toast(er.message)).finally(() => { el.disabled = false; }); }
+    if (act === "go-plan") location.hash = "#/plan";
+    if (act === "go-locations") location.hash = "#/locations";
+    if (act === "new-assignment") sheetNewAssignment().catch((er) => toast(er.message));
+    if (act === "plan-go") { planDate = readDate(document, "pday"); route(); }
+    if (act === "plan-day") { planDate = addDays(readDate(document, "pday"), Number(el.dataset.d)); route(); }
+    if (act === "cancel-assignment" && confirm("این ارجاع لغو شود؟")) api(`service_assignments?id=eq.${el.dataset.id}`, { method: "PATCH", body: { status: "cancelled", updated_at: new Date().toISOString() } }).then(() => { toast("ارجاع لغو شد"); route(); }).catch((er) => toast(er.message));
+    if (act === "loc-decide") { const okd = el.dataset.ok === "1"; if (confirm(okd ? "این موقعیت تأیید شود؟" : "این موقعیت رد شود؟")) rpc("decide_building_location", { p_building_id: Number(el.dataset.id), p_approve: okd }).then(() => { toast(okd ? "موقعیت تأیید شد" : "موقعیت رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "go-reports") location.hash = "#/reports";
     if (act === "report-tab") { reportTab = el.dataset.k; route(); }
     if (act === "report-apply") {

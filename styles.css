@@ -394,3 +394,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--brand); box-shad
 .pick input { width: 20px; height: 20px; margin-top: 3px; flex: 0 0 auto; accent-color: var(--brand); }
 .pick:has(input:checked) { background: color-mix(in srgb, var(--brand) 8%, transparent); }
 .actions a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* M28: star ratings */
+.stars { display: flex; gap: 4px; justify-content: flex-start; margin: 2px 0 6px; }
+.star { width: 44px; height: 44px; border: 0; background: none; font-size: 30px; line-height: 1; color: #cbd5e1; cursor: pointer; padding: 0; }
+.star.on { color: var(--yellow); text-shadow: 0 1px 0 rgba(0,0,0,.08); }
+.star:focus-visible { outline: 2px solid var(--brand); border-radius: 8px; }
+.rate-sum b { color: #b7791f; }

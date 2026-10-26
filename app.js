@@ -620,6 +620,12 @@
     if (isTech && f.status === "in_progress") statusBtns.push(`<button class="btn ok small" data-act="status" data-s="repaired">رفع شد</button>`);
     if (can.manageFaults() && f.status === "repaired") statusBtns.push(`<button class="btn secondary small" data-act="status" data-s="closed">بستن پرونده</button>`);
     if (can.manageFaults() && ["reported", "assigned"].includes(f.status)) statusBtns.push(`<button class="btn secondary small" data-act="status" data-s="cancelled">لغو</button>`);
+    let rateHtml = "";
+    if (canRate() && f.technician_id && ["repaired", "closed"].includes(f.status)) {
+      const [mine] = await rpc("my_work_rating", { p_kind: "repair", p_ref_id: id }).catch(() => []);
+      rateHtml = `<div class="card" style="margin-top:12px"><div class="item-title">امتیاز به تعمیر</div>${starsHtml(mine ? mine.stars : 0)}
+        <div class="actions"><button class="btn small" data-act="rate-repair">${mine ? "به‌روزرسانی امتیاز" : "ثبت امتیاز"}</button></div></div>`;
+    }
     let repairHtml = "";
     if (repair && repair.status !== "completed" && repair.status !== "cancelled" && isStaff()) {
       repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">تکمیل تعمیر و صدور فاکتور</div>
@@ -640,10 +646,11 @@
       <dt>مدیر ساختمان</dt><dd>${esc(b.manager_name || "—")} ${b.manager_mobile ? `<a href="tel:${esc(b.manager_mobile)}">${esc(fa(b.manager_mobile))}</a>` : ""}</dd>
       <dt>تکنسین</dt><dd>${esc(f.technicians ? f.technicians.name : "—")}</dd>
       ${f.repaired_at ? `<dt>زمان رفع</dt><dd>${jtime(f.repaired_at)}</dd>` : ""}</dl>
-      ${actions}<div class="actions">${statusBtns.join("")}</div>${repairHtml}
+      ${actions}<div class="actions">${statusBtns.join("")}</div>${repairHtml}${rateHtml}
       <div class="actions"><button class="btn secondary" data-close>بستن</button></div>`,
     (el, close) => {
       if (el.querySelector('[data-amount="labor"]')) { bindAmount(el, "labor"); bindAmount(el, "parts"); }
+      bindStars(el);
       el.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-act]"); if (!btn) return;
         const act = btn.dataset.act;
@@ -651,6 +658,11 @@
           const t = el.querySelector('[data-field="tech"]').value; if (!t) throw new Error("تکنسین را انتخاب کنید");
           await api(`faults?id=eq.${id}`, { method: "PATCH", body: { technician_id: Number(t), status: f.status === "reported" ? "assigned" : f.status } });
           close(); toast("ارجاع شد"); route();
+        });
+        if (act === "rate-repair") guarded(btn, async () => {
+          const r = readStars(el); if (!r) throw new Error("تعداد ستاره را انتخاب کنید");
+          await rpc("rate_work", { p_kind: "repair", p_ref_id: id, p_stars: r.stars, p_note: r.note });
+          close(); toast("امتیاز ثبت شد");
         });
         if (act === "status") guarded(btn, async () => {
           await api(`faults?id=eq.${id}`, { method: "PATCH", body: { status: btn.dataset.s } });
@@ -695,17 +707,42 @@
     });
   }
 
+  const canRate = () => ["CEO", "REPAIR_MANAGER", "BUILDING_MANAGER", "EMPLOYER"].includes(role());
+  function starsHtml(value) {
+    const side = ["CEO", "REPAIR_MANAGER"].includes(role()) ? "کیفیت فنی کار" : "رضایت شما از کار";
+    return `<div class="rate" data-rate="${value || 0}"><label>امتیاز ${side} (اختیاری)</label>
+      <div class="stars" role="group" aria-label="امتیاز ۱ تا ۵ ستاره">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star ${n <= (value || 0) ? "on" : ""}" data-star="${n}" aria-label="${fa(n)} ستاره">★</button>`).join("")}</div>
+      <input type="text" data-field="rnote" placeholder="توضیح امتیاز (برای ۱ یا ۲ ستاره لازم است)"></div>`;
+  }
+  function bindStars(root) {
+    const box = root.querySelector(".rate"); if (!box) return;
+    box.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-star]"); if (!b) return;
+      const v = Number(b.dataset.star) === Number(box.dataset.rate) ? 0 : Number(b.dataset.star);
+      box.dataset.rate = v; box.querySelectorAll("[data-star]").forEach((x) => x.classList.toggle("on", Number(x.dataset.star) <= v));
+    });
+  }
+  function readStars(root) {
+    const box = root.querySelector(".rate"); if (!box) return null;
+    const stars = Number(box.dataset.rate || 0), note = box.querySelector('[data-field="rnote"]').value.trim();
+    if (!stars) return null;
+    if (stars <= 2 && !note) throw new Error("برای امتیاز ۱ یا ۲ ستاره، دلیل را بنویسید");
+    return { stars, note: note || null };
+  }
   function sheetApprove(id, approved) {
     sheet(`<h3>${approved ? "تأیید انجام سرویس" : "رد سرویس"}</h3>
-      ${approved ? `<p class="small muted">با تأیید، صورتحساب این ماه صادر می‌شود. تأیید با نام و زمان شما ثبت می‌شود.</p>` : `<label>دلیل رد</label><textarea data-field="note" required></textarea>`}
+      ${approved ? `<p class="small muted">با تأیید، صورتحساب این ماه صادر می‌شود. تأیید با نام و زمان شما ثبت می‌شود.</p>${canRate() ? starsHtml(0) : ""}` : `<label>دلیل رد</label><textarea data-field="note" required></textarea>`}
       <div class="actions"><button class="btn ${approved ? "ok" : "danger"}" data-act="save">${approved ? "تأیید" : "ثبت رد"}</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
+      bindStars(el);
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const note = el.querySelector('[data-field="note"]');
         if (!approved && !note.value.trim()) throw new Error("دلیل رد را بنویسید");
+        const rating = approved ? readStars(el) : null;
         await api("service_approvals", { method: "POST", body: { service_report_id: id, approver_name: state.profile.full_name || session.email,
           status: approved ? "approved" : "rejected", approval_note: note ? note.value.trim() : null, approved_by_user_id: session.user_id } });
-        close(); toast(approved ? "سرویس تأیید شد" : "سرویس رد شد"); route();
+        if (rating) { try { await rpc("rate_work", { p_kind: "service", p_ref_id: id, p_stars: rating.stars, p_note: rating.note }); } catch (er) { toast("سرویس تأیید شد ولی امتیاز ثبت نشد: " + er.message); close(); route(); return; } }
+        close(); toast(approved ? (rating ? "سرویس تأیید و امتیاز ثبت شد" : "سرویس تأیید شد") : "سرویس رد شد"); route();
       }));
     });
   }
@@ -1283,13 +1320,24 @@
     state.techs = null;
     const list = await loadTechs();
     const act = list.filter((t) => t.status === "active"), off = list.filter((t) => t.status !== "active");
+    const rt = await rpc("technician_ratings", { p_from: addDays(todayTehran(), -90), p_to: null }).catch(() => []);
+    const rateLine = (t) => {
+      const mine = rt.filter((r) => r.technician_id === t.id); if (!mine.length) return "";
+      const part = (side, label) => {
+        const rows = mine.filter((r) => r.rater_kind === side); if (!rows.length) return "";
+        const n = rows.reduce((a, r) => a + Number(r.n), 0), avg = rows.reduce((a, r) => a + Number(r.avg_stars) * Number(r.n), 0) / n, low = rows.reduce((a, r) => a + Number(r.low_count), 0);
+        return `<span class="rate-sum">${label}: <b>★ ${fa(avg.toFixed(1))}</b> <span class="muted">(${fa(n)} امتیاز${low ? "، " + fa(low) + " امتیاز پایین" : ""}${n < 10 ? "، هنوز کم برای قضاوت" : ""})</span></span>`;
+      };
+      return `<div class="small" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px">${part("customer", "رضایت مشتری")}${part("manager", "کیفیت فنی")}</div>`;
+    };
     const card = (t) => `<div class="card"><div class="item-head"><div><div class="item-title">${esc(t.name)}</div>
         <div class="small muted">${esc(skillText(t) || "بدون تخصص")}${t.mobile ? ` · <a href="tel:${esc(t.mobile)}" class="ltr">${esc(fa(t.mobile))}</a>` : ""}</div></div>
-        <div style="text-align:left">${t.user_id ? `<span class="badge ok">حساب دارد</span>` : `<span class="badge">بدون حساب</span>`}</div></div>
+        <div style="text-align:left">${t.user_id ? `<span class="badge ok">حساب دارد</span>` : `<span class="badge">بدون حساب</span>`}</div></div>${rateLine(t)}
         <div class="actions"><button class="btn secondary small" data-act="edit-tech" data-id="${t.id}">ویرایش</button>
         ${role() === "CEO" && !t.user_id && t.status === "active" ? `<button class="btn small" data-act="tech-account" data-id="${t.id}">ساخت حساب ورود</button>` : ""}</div></div>`;
     return shell("سرویس‌کارها و تعمیرکارها", "more", `<a href="#/more" class="small">→ بازگشت</a>
       <div class="row" style="margin-top:8px"><button class="btn" data-act="new-tech">+ سرویس‌کار / تعمیرکار جدید</button></div>
+      <div class="hint">امتیازها مربوط به ۹۰ روز اخیر است و فقط مدیرعامل و مدیر تعمیرات می‌بینند.</div>
       <div class="hint">همه در تمام مناطق کار می‌کنند. سرویس‌کار با حساب ورود، سرویس را خودش از گوشی ثبت می‌کند؛ تعمیرکار خرابی‌های ارجاع‌شده را می‌بیند.</div>
       ${act.map(card).join("") || `<div class="card empty">کسی تعریف نشده</div>`}
       ${off.length ? `<div class="section-title"><h2>غیرفعال</h2></div>${off.map(card).join("")}` : ""}`);

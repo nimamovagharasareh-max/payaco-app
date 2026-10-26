@@ -296,7 +296,7 @@
       <div class="who">${esc(p.full_name || displayLogin())} · ${esc(ROLE[p.role] || p.role)}</div></div></div></header>
       <main id="view">${body}</main>
       <nav class="tabbar"><div class="side-brand"><img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی"></div>
-        ${tabsFor().map(([k, ico, label]) => `<a href="#/${k}" class="${current === k ? "on" : ""}"><span class="ico">${icon(ico)}</span>${label}</a>`).join("")}
+        ${tabsFor().map(([k, ico, label]) => `<a href="#/${k}" class="${current === k ? "on" : ""}"><span class="ico">${icon(ico)}${state.badges && state.badges[k] ? `<b class="tab-badge">${fa(state.badges[k])}</b>` : ""}</span>${label}</a>`).join("")}
         <div class="side-foot">${esc(p.full_name || "")}<br><span>${esc(ROLE[p.role] || p.role)}</span></div></nav>`;
   }
 
@@ -657,7 +657,10 @@
         if (act === "assign") guarded(btn, async () => {
           const t = el.querySelector('[data-field="tech"]').value; if (!t) throw new Error("تکنسین را انتخاب کنید");
           await api(`faults?id=eq.${id}`, { method: "PATCH", body: { technician_id: Number(t), status: f.status === "reported" ? "assigned" : f.status } });
-          close(); toast("ارجاع شد"); route();
+          close(); toast("ارجاع شد؛ در حال ارسال پیامک به تعمیرکار…"); route();
+          callFunction("notify-tech", { kind: "fault", fault_id: id })
+            .then((r) => toast(r.test ? `پیامک ارجاع (آزمایشی) به ${fa(r.to)} رفت` : "پیامک ارجاع برای تعمیرکار فرستاده شد"))
+            .catch((er) => toast(er.message));
         });
         if (act === "rate-repair") guarded(btn, async () => {
           const r = readStars(el); if (!r) throw new Error("تعداد ستاره را انتخاب کنید");
@@ -1756,8 +1759,9 @@
 
   async function viewCompany() {
     const c = await rpc("get_company_profile");
-    const st = await api("app_settings?key=in.(sms.mode,sms.test_mobile,sms.template_id)&select=key,value");
+    const st = await api("app_settings?key=in.(sms.mode,sms.test_mobile,sms.template_id,sms.tpl_plan,sms.tpl_fault)&select=key,value");
     const tplId = (st.find((x) => x.key === "sms.template_id") || {}).value || "";
+    const tplPlan = (st.find((x) => x.key === "sms.tpl_plan") || {}).value || "", tplFault = (st.find((x) => x.key === "sms.tpl_fault") || {}).value || "";
     const smsMode = (st.find((x) => x.key === "sms.mode") || {}).value || "test";
     const testMobile = (st.find((x) => x.key === "sms.test_mobile") || {}).value || "";
     const F = [["name", "نام روی اسناد"], ["slogan", "شعار"], ["slogan_en", "شعار انگلیسی"], ["phone", "تلفن", 1], ["phone2", "تلفن دوم", 1], ["website", "سایت", 1], ["instagram", "پیج اینستاگرام", 1],
@@ -1771,6 +1775,9 @@
         <div class="small muted">${smsMode === "live" ? "پیامک‌ها به شماره‌ی انتخاب‌شده (مدیر ساختمان) فرستاده می‌شوند." : "همه‌ی پیامک‌ها فقط به شماره‌ی آزمایشی زیر فرستاده می‌شوند تا قبل از شروع کار، هیچ مشترکی پیامکی نگیرد."}</div>
         <label>شماره قالب (پترن) SMS.ir</label><div class="row"><input type="text" data-field="sms-tpl" class="ltr" inputmode="numeric" value="${esc(tplId)}" placeholder="خالی = ارسال متنی معمولی" style="flex:1"><button class="btn secondary small" data-act="sms-tpl-save">ذخیره</button></div>
         <div class="hint">با قالب، پیامک به شماره‌های «لیست سیاه» هم می‌رسد و شب‌ها در صف نمی‌ماند.</div>
+        <label>قالب پیامک برنامه‌ی فردای سرویس‌کار (ساعت ۲۱)</label><input type="text" data-field="sms-tpl-plan" class="ltr" inputmode="numeric" value="${esc(tplPlan)}" placeholder="پارامترها: COUNT، DAY">
+        <label>قالب پیامک ارجاع خرابی به تعمیرکار</label><input type="text" data-field="sms-tpl-fault" class="ltr" inputmode="numeric" value="${esc(tplFault)}" placeholder="پارامترها: PRIORITY، BUILDING، NUMBER">
+        <div class="actions"><button class="btn secondary small" data-act="sms-tech-tpl-save">ذخیره‌ی قالب‌های سرویس‌کار</button></div>
         <label>شماره‌ی آزمایشی پیامک</label><div class="row"><input type="text" data-field="sms-test" class="ltr" inputmode="tel" value="${esc(testMobile)}" placeholder="خالی = تلفن شرکت" style="flex:1"><button class="btn secondary small" data-act="sms-test-save">ذخیره</button></div>
         <div class="actions"><button class="btn secondary small" data-act="sms-ping">ارسال پیامک آزمایشی</button><button class="btn ${smsMode === "live" ? "secondary" : "danger"} small" data-act="sms-mode" data-k="${smsMode === "live" ? "test" : "live"}">${smsMode === "live" ? "برگشت به حالت آزمایشی" : "فعال‌سازی ارسال واقعی"}</button></div></div>`);
   }
@@ -1802,6 +1809,13 @@
     const hash = location.hash.replace(/^#\/?/, "");
     const [page, arg] = hash.split("/");
     const def = role() === "TECHNICIAN" ? "faults" : "dashboard";
+    if (role() === "TECHNICIAN") {
+      try {
+        const t = todayTehran(), me = await myTech();
+        const [asg, fl] = me ? await Promise.all([rpc("my_assignments", { p_from: t, p_to: addDays(t, 1) }), api(`faults?technician_id=eq.${me.id}&status=in.(reported,assigned)&select=id`)]) : [[], []];
+        state.badges = { services: asg.filter((a) => a.status === "planned").length, faults: fl.length };
+      } catch (e) { state.badges = null; }
+    }
     if (!$app.querySelector("#view")) $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
     try {
       let html;
@@ -1938,6 +1952,7 @@
     if (act === "pub-claim") sheetPublicClaim();
     if (act === "doc-sms") sheetSms(id).catch((er) => toast(er.message));
     if (act === "sms-tpl-save") guarded(el, async () => { await rpc("set_sms_template", { p_id: toEn(document.querySelector("[data-field=sms-tpl]").value.trim()) }); toast("ذخیره شد"); });
+    if (act === "sms-tech-tpl-save") guarded(el, async () => { await rpc("set_sms_tech_templates", { p_plan: toEn(document.querySelector("[data-field=sms-tpl-plan]").value.trim()), p_fault: toEn(document.querySelector("[data-field=sms-tpl-fault]").value.trim()) }); toast("ذخیره شد"); });
     if (act === "sms-test-save") guarded(el, async () => { await rpc("set_sms_test_mobile", { p_mobile: toEn(document.querySelector("[data-field=sms-test]").value.trim()) }); toast("ذخیره شد"); });
     if (act === "sms-ping") guarded(el, async () => { const r = await callFunction("send-sms", { kind: "ping" }); toast(`پیامک آزمایشی به ${fa(r.to)} فرستاده شد`); });
     if (act === "sms-mode") {

@@ -1055,7 +1055,7 @@
   /* ------------------------------------------------------------------ contract changes: edit / amendment / renewal (employee asks, CEO approves) */
   const CHANGE_KIND = { edit: "ویرایش اطلاعات", amendment: "الحاقیه", renewal: "تمدید" };
   const CHANGE_STATUS = { pending: ["منتظر تأیید مدیرعامل", "warn"], approved: ["اعمال شد", "ok"], rejected: ["رد شد", "danger"], withdrawn: ["پس گرفته شد", ""] };
-  const FIELD_LABEL = { manager_name: "مدیر ساختمان", manager_mobile: "موبایل مدیر", address: "نشانی", name: "نام", mobile: "موبایل", national_id: "کد/شناسه ملی", notes: "توضیحات",
+  const FIELD_LABEL = { contract_code: "کد قرارداد", start_date: "تاریخ شروع", end_date: "تاریخ پایان", monthly_amount_rial: "مبلغ ماهانه (ریال)", missed_service_deduction_rial: "کسر سرویس انجام‌نشده (ریال)", services_per_month: "سرویس در ماه", manager_name: "مدیر ساختمان", manager_mobile: "موبایل مدیر", address: "نشانی", name: "نام", mobile: "موبایل", national_id: "کد/شناسه ملی", notes: "توضیحات",
     stops: "توقف", capacity_persons: "ظرفیت", motor_type: "موتور", cabin_door_type: "درب کابین", landing_door_type: "درب طبقات", controller_brand: "تابلو فرمان" };
   const ymText = (ym) => `${MONTHS[ym % 100 - 1]} ${fa(Math.floor(ym / 100))}`;
   function changeSummary(k) {
@@ -1081,13 +1081,24 @@
   }
 
   async function sheetEditContract(contractId) {
-    const [c] = await api(`contracts?id=eq.${contractId}&select=id,contract_code,notes,buildings(manager_name,manager_mobile,address),customers(name,mobile,national_id,address)`);
+    const [c] = await api(`contracts?id=eq.${contractId}&select=id,contract_code,notes,start_date,end_date,monthly_amount_rial,missed_service_deduction_rial,services_per_month,buildings(name,manager_name,manager_mobile,address),customers(name,mobile,national_id,address)`);
+    const ceo = role() === "CEO";
+    const ceoFix = ceo ? `<div class="section-title"><h2>اصلاح قرارداد (فقط مدیرعامل)</h2></div>
+      <div class="hint">برای اصلاح اشتباه ورود اطلاعات. تاریخ شروع و مبالغ فقط تا وقتی قابل اصلاح است که صورتحسابی برای این قرارداد صادر نشده باشد؛ بعد از آن با «الحاقیه».</div>
+      <label>کد قرارداد</label><input type="text" data-cf="contract_code" data-old="${esc(c.contract_code)}" value="${esc(c.contract_code)}" class="ltr">
+      <label>تاریخ شروع</label>${datePickerHtml("fix-start", c.start_date)}
+      <label>تاریخ پایان</label>${datePickerHtml("fix-end", c.end_date)}
+      <label>مبلغ ماهانه (ریال)</label><input type="text" inputmode="numeric" class="ltr" data-cf="monthly_amount_rial" data-old="${c.monthly_amount_rial}" value="${c.monthly_amount_rial}">
+      <label>کسر سرویس انجام‌نشده (ریال)</label><input type="text" inputmode="numeric" class="ltr" data-cf="missed_service_deduction_rial" data-old="${c.missed_service_deduction_rial}" value="${c.missed_service_deduction_rial}">
+      <label>تعداد سرویس در ماه</label><input type="text" inputmode="numeric" class="ltr" data-cf="services_per_month" data-old="${c.services_per_month}" value="${c.services_per_month}">
+      <div class="hint" data-field="fix-preview"></div>` : "";
     const elev = await api(`elevators?contract_id=eq.${contractId}&select=id,elevator_no,subscription_code,stops,capacity_persons,motor_type,cabin_door_type,landing_door_type,controller_brand,notes&order=elevator_no`);
     const b = c.buildings || {}, cu = c.customers || {};
     const inp = (grp, f, v, ltr) => `<label>${FIELD_LABEL[f]}</label><input type="text" data-g="${grp}" data-f="${f}" data-old="${esc(v ?? "")}" value="${esc(v ?? "")}" ${ltr ? 'class="ltr" inputmode="tel"' : ""}>`;
     sheet(`<h3>ویرایش اطلاعات قرارداد ${esc(fa(c.contract_code))}</h3>
-      <div class="hint">شرایط مالی اینجا تغییر نمی‌کند؛ برای آن «الحاقیه» ثبت کنید.${role() === "CEO" ? "" : " تغییرات بعد از تأیید مدیرعامل اعمال می‌شود."}</div>
-      <div class="section-title"><h2>ساختمان</h2></div>${inp("building", "manager_name", b.manager_name)}${inp("building", "manager_mobile", b.manager_mobile, true)}${inp("building", "address", b.address)}
+      <div class="hint">${ceo ? "تغییر شرایط مالی از ماه مشخص به بعد با «الحاقیه» است؛ اصلاح اشتباه ورود در بخش «اصلاح قرارداد»." : "شرایط مالی اینجا تغییر نمی‌کند؛ برای آن «الحاقیه» ثبت کنید. تغییرات بعد از تأیید مدیرعامل اعمال می‌شود."}</div>
+      ${ceoFix}
+      <div class="section-title"><h2>ساختمان</h2></div><label>نام ساختمان</label><input type="text" data-g="building" data-f="name" data-old="${esc(b.name ?? "")}" value="${esc(b.name ?? "")}">${inp("building", "manager_name", b.manager_name)}${inp("building", "manager_mobile", b.manager_mobile, true)}${inp("building", "address", b.address)}
       <div class="section-title"><h2>کارفرما</h2></div>${inp("customer", "name", cu.name)}${inp("customer", "mobile", cu.mobile, true)}${inp("customer", "national_id", cu.national_id, true)}${inp("customer", "address", cu.address)}
       ${elev.map((e) => `<div class="section-title"><h2>دستگاه ${fa(e.elevator_no)}${e.subscription_code ? ` · کد ${esc(fa(e.subscription_code))}` : ""}</h2></div>
         <div data-elev="${e.id}" data-no="${e.elevator_no}">${["stops", "capacity_persons", "motor_type", "cabin_door_type", "landing_door_type", "controller_brand", "notes"].map((f) => `<label>${FIELD_LABEL[f]}</label><input type="text" data-ef="${f}" data-old="${esc(e[f] ?? "")}" value="${esc(e[f] ?? "")}">`).join("")}</div>`).join("")}
@@ -1107,6 +1118,25 @@
           if (Object.keys(ch).length > 2) ev.push(ch);
         });
         if (ev.length) payload.elevators = ev;
+        if (ceo) {
+          const fix = {};
+          el.querySelectorAll("input[data-cf]").forEach((i) => { const v = toEn(i.value.trim()).replace(/[,٬\s]/g, ""); if (v !== toEn(i.dataset.old)) fix[i.dataset.cf] = v; });
+          ["monthly_amount_rial", "missed_service_deduction_rial", "services_per_month"].forEach((k) => { if (k in fix && !/^\d+$/.test(fix[k])) throw new Error("مبلغ‌ها و تعداد سرویس باید عدد باشند"); });
+          const st = readDate(el, "fix-start"), en = readDate(el, "fix-end");
+          if (c.start_date && st !== c.start_date) fix.start_date = st;
+          if (c.end_date && en !== c.end_date) fix.end_date = en;
+          if (en < st) throw new Error("تاریخ پایان باید بعد از شروع باشد");
+          if (Object.keys(fix).length) {
+            payload.contract = { ...(payload.contract || {}), ...fix };
+            const parts = [];
+            if (fix.start_date || fix.end_date) parts.push(`تاریخ: ${jdate(st)} تا ${jdate(en)}`);
+            if (fix.monthly_amount_rial) parts.push(`ماهانه: ${num(Math.round(fix.monthly_amount_rial / 10))} تومان`);
+            if (fix.missed_service_deduction_rial) parts.push(`کسر: ${num(Math.round(fix.missed_service_deduction_rial / 10))} تومان`);
+            if (fix.services_per_month) parts.push(`سرویس در ماه: ${fa(fix.services_per_month)}`);
+            if (fix.contract_code) parts.push(`کد: ${fa(fix.contract_code)}`);
+            if (!confirm("اصلاح قرارداد ثبت شود؟\n" + parts.join("\n"))) return;
+          }
+        }
         if (!Object.keys(payload).length) throw new Error("چیزی تغییر نکرده است");
         await rpc("submit_contract_change", { p_contract_id: contractId, p_kind: "edit", p_payload: payload });
         close(); state.contracts = null; toast(role() === "CEO" ? "تغییرات ذخیره شد" : "درخواست ویرایش ثبت شد؛ پس از تأیید مدیرعامل اعمال می‌شود"); route();

@@ -178,7 +178,9 @@
     }
     return session.access_token;
   }
+  let listCache = null; // contracts list, kept for 2 minutes and dropped on any write
   async function api(path, { method = "GET", body, prefer } = {}) {
+    if (method !== "GET" && !/^rpc\/(get_|my_|service_targets|pending_|technician_ratings|report_|month_close_preview)/.test(path)) listCache = null;
     const t = await token();
     const res = await fetch(`${CFG.supabaseUrl}/rest/v1/${path}`, {
       method,
@@ -423,8 +425,11 @@
   let contractSearch = "";
   let contractTab = "current";
   async function viewContracts() {
-    const list = await api("v_contract_overview?select=*&order=contract_code");
-    const held = isStaff() ? new Set((await api("contracts?billing_hold=eq.true&select=id")).map((x) => x.id)) : new Set();
+    if (!listCache || Date.now() - listCache.t > 120000) {
+      const [l, h] = await Promise.all([api("v_contract_overview?select=*&order=contract_code"), isStaff() ? api("contracts?billing_hold=eq.true&select=id") : Promise.resolve([])]);
+      listCache = { t: Date.now(), list: l, held: new Set(h.map((x) => x.id)) };
+    }
+    const list = listCache.list, held = listCache.held;
     const archived = (c) => ["expired", "terminated"].includes(c.status);
     const cur = list.filter((c) => !archived(c)), arc = list.filter(archived);
     const base = contractTab === "archive" ? arc : cur;
@@ -451,19 +456,21 @@
   }
 
   async function viewContract(id) {
-    const [c] = await api(`v_contract_overview?id=eq.${id}&select=*`);
+    const [[c], allInvoices, [next], [hold], changes, terms, files] = await Promise.all([
+      api(`v_contract_overview?id=eq.${id}&select=*`),
+      api(`invoices?contract_id=eq.${id}&select=id,document_type,document_number,issue_date,total_rial,status,opening_balance_rial,invoice_items(description,amount_rial,debit_credit)&order=issue_date.desc,id.desc`),
+      api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`),
+      api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason`),
+      isStaff() ? api(`contract_change_requests?contract_id=eq.${id}&select=id,kind,payload,status,document_number,requested_at,decided_at,decision_note&order=id.desc`) : Promise.resolve([]),
+      api(`contract_terms?contract_id=eq.${id}&select=effective_ym,monthly_amount_rial,missed_service_deduction_rial,services_per_month,source&order=effective_ym`),
+      api(`documents?contract_id=eq.${id}&storage_path=not.is.null&select=id,document_type,file_name,storage_path,uploaded_at,notes,change_request_id&order=uploaded_at.desc`)]);
     if (!c) return shell("قرارداد", "contracts", `<div class="card empty">پیدا نشد یا دسترسی ندارید</div>`);
-    const allInvoices = await api(`invoices?contract_id=eq.${id}&select=id,document_type,document_number,issue_date,total_rial,status,opening_balance_rial,invoice_items(description,amount_rial,debit_credit)&order=issue_date.desc,id.desc`);
     // drafts (opening balances waiting for approval) are shown to the CEO only
     const invoices = allInvoices.filter((i) => i.status !== "draft" || role() === "CEO");
-    const [next] = await api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`);
-    const [hold] = await api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason`);
-    const prev = c.previous_contract_id ? (await api(`contracts?id=eq.${c.previous_contract_id}&select=id,contract_code`))[0] : null;
     const opening = allInvoices.find((i) => i.document_type === "opening_balance" && i.status !== "cancelled");
-    const changes = isStaff() ? await api(`contract_change_requests?contract_id=eq.${id}&select=id,kind,payload,status,document_number,requested_at,decided_at,decision_note&order=id.desc`) : [];
-    const terms = await api(`contract_terms?contract_id=eq.${id}&select=effective_ym,monthly_amount_rial,missed_service_deduction_rial,services_per_month,source&order=effective_ym`);
-    const files = await api(`documents?contract_id=eq.${id}&storage_path=not.is.null&select=id,document_type,file_name,storage_path,uploaded_at,notes,change_request_id&order=uploaded_at.desc`);
-    const ledger = await api(`ledger?contract_id=eq.${id}&select=id,transaction_date,description,debit_rial,credit_rial&order=transaction_date.asc,id.asc`);
+    const [ledger, prevL] = await Promise.all([api(`ledger?contract_id=eq.${id}&select=id,transaction_date,description,debit_rial,credit_rial&order=transaction_date.asc,id.asc`),
+      c.previous_contract_id ? api(`contracts?id=eq.${c.previous_contract_id}&select=id,contract_code`) : Promise.resolve([])]);
+    const prev = prevL[0] || null;
     let run = 0;
     const rows = ledger.map((l) => { run += Number(l.debit_rial) - Number(l.credit_rial); return { ...l, run }; }).reverse();
     const open = invoices.filter((i) => ["issued", "partially_paid"].includes(i.status));
@@ -477,14 +484,10 @@
       if (c.status === "active") actions.push(`<button class="btn secondary" data-act="amend" data-id="${id}">الحاقیه</button>`);
       if (!next && ["active", "expired"].includes(c.status)) actions.push(`<button class="btn secondary" data-act="renew" data-id="${id}">تمدید قرارداد</button>`);
     }
-    const nextC = await api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`).catch(() => []);
-    const periodLinks = [c.previous_contract_id ? `<a href="#/contract/${c.previous_contract_id}">← قرارداد دوره‌ی قبل</a>` : "",
-      nextC.length ? `<a href="#/contract/${nextC[0].id}">این قرارداد تمدید شده: قرارداد ${esc(fa(nextC[0].contract_code))} ←</a>` : ""].filter(Boolean);
-    const periodCard = periodLinks.length ? `<div class="card small" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">${periodLinks.join("")}</div>` : "";
     const locCard = ["BUILDING_MANAGER", "EMPLOYER"].includes(role()) ? `<div class="card"><div class="item-title">موقعیت ساختمان برای مسیریابی سرویس‌کار</div>
       <div class="small muted">داخل یا جلوی ساختمان دکمه را بزنید؛ پس از تأیید مدیر تعمیرات، سرویس‌کارها با یک لمس مسیریابی می‌کنند.</div>
       <div class="actions"><button class="btn secondary small" data-act="send-location" data-bid="${c.building_id}">ارسال موقعیت ساختمان</button></div></div>` : "";
-    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${periodCard}${locCard}
+    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${locCard}
       <a href="#/contracts" class="small">→ بازگشت</a>
       <div class="card" style="margin-top:8px"><div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
         <div class="small muted">${esc(c.building_address || "")}</div></div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
@@ -1837,6 +1840,7 @@
       } catch (e) { state.badges = null; }
     }
     if (!$app.querySelector("#view")) $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
+    document.body.classList.add("busy");
     try {
       let html;
       switch (page || def) {
@@ -1867,7 +1871,7 @@
     } catch (e) {
       if (e instanceof AuthError) return viewLogin("لطفاً دوباره وارد شوید");
       viewError(e);
-    }
+    } finally { document.body.classList.remove("busy"); }
   }
   function viewError(e) {
     $app.innerHTML = `<div class="login-wrap"><div class="login-card"><h1>خطا</h1><p class="muted">${esc(e.message)}</p>

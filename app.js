@@ -421,17 +421,33 @@
   }
 
   let contractSearch = "";
+  let contractTab = "current";
   async function viewContracts() {
     const list = await api("v_contract_overview?select=*&order=contract_code");
     const held = isStaff() ? new Set((await api("contracts?billing_hold=eq.true&select=id")).map((x) => x.id)) : new Set();
+    const archived = (c) => ["expired", "terminated"].includes(c.status);
+    const cur = list.filter((c) => !archived(c)), arc = list.filter(archived);
+    const base = contractTab === "archive" ? arc : cur;
     const q = toEn(contractSearch).trim();
-    const shown = q ? list.filter((c) => [c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].some((v) => toEn(v || "").includes(q))) : list;
+    const shown = q ? base.filter((c) => [c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].some((v) => toEn(v || "").includes(q))) : base;
+    const card = (c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(toEn([c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].join(" ")))}">
+        <div class="item-head"><div class="with-key"><span class="call-key" title="کد قرارداد">${esc(fa(String(c.contract_code).split(/[-/]/)[0]))}</span><div><div class="item-title">${esc(c.building_name || "")}</div>
+        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div>
+        ${contractTab === "archive" && c.start_date ? `<div class="small muted">${jdate(c.start_date)} تا ${jdate(c.end_date)}</div>` : ""}</div></div>
+        <div style="text-align:left">${money(Math.abs(c.balance_rial), { cls: c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : "" })}${balanceBadge(c.balance_rial)}</div></div></div>`;
+    let body;
+    if (!shown.length) body = `<div class="card empty">${contractTab === "archive" ? "قراردادی در بایگانی نیست" : "قراردادی پیدا نشد"}</div>`;
+    else if (contractTab === "archive") {
+      // archive grouped by the Jalali year the contract period started
+      const yearOf = (c) => { if (!c.start_date) return 0; const [y, m, d] = c.start_date.split("-").map(Number); return g2j(y, m, d).jy; };
+      const groups = new Map();
+      shown.slice().sort((x, y) => yearOf(y) - yearOf(x)).forEach((c) => { const k = yearOf(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); });
+      body = [...groups.entries()].map(([y, cs]) => `<div class="section-title"><h2>قراردادهای سال ${y ? fa(y) : "نامشخص"} (${fa(cs.length)})</h2></div>${cs.map(card).join("")}`).join("");
+    } else body = shown.map(card).join("");
     return shell(isExternal() ? "صورتحساب‌ها" : "قراردادها", "contracts", `
+      ${arc.length ? `<div class="chips"><button data-act="contract-tab" data-k="current" class="${contractTab === "current" ? "on" : ""}">جاری (${fa(cur.length)})</button><button data-act="contract-tab" data-k="archive" class="${contractTab === "archive" ? "on" : ""}">بایگانی (${fa(arc.length)})</button></div>` : ""}
       ${list.length > 3 ? `<input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}"><div style="height:10px"></div>` : ""}
-      ${shown.length ? shown.map((c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(toEn([c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].join(" ")))}">
-        <div class="item-head"><div class="with-key"><span class="call-key" title="کد قرارداد">${esc(fa(String(c.contract_code).split("-")[0]))}</span><div><div class="item-title">${esc(c.building_name || "")}</div>
-        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div></div></div>
-        <div style="text-align:left">${money(Math.abs(c.balance_rial), { cls: c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : "" })}${balanceBadge(c.balance_rial)}</div></div></div>`).join("") : `<div class="card empty">قراردادی پیدا نشد</div>`}`);
+      ${body}`);
   }
 
   async function viewContract(id) {
@@ -461,10 +477,14 @@
       if (c.status === "active") actions.push(`<button class="btn secondary" data-act="amend" data-id="${id}">الحاقیه</button>`);
       if (!next && ["active", "expired"].includes(c.status)) actions.push(`<button class="btn secondary" data-act="renew" data-id="${id}">تمدید قرارداد</button>`);
     }
+    const nextC = await api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`).catch(() => []);
+    const periodLinks = [c.previous_contract_id ? `<a href="#/contract/${c.previous_contract_id}">← قرارداد دوره‌ی قبل</a>` : "",
+      nextC.length ? `<a href="#/contract/${nextC[0].id}">این قرارداد تمدید شده: قرارداد ${esc(fa(nextC[0].contract_code))} ←</a>` : ""].filter(Boolean);
+    const periodCard = periodLinks.length ? `<div class="card small" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">${periodLinks.join("")}</div>` : "";
     const locCard = ["BUILDING_MANAGER", "EMPLOYER"].includes(role()) ? `<div class="card"><div class="item-title">موقعیت ساختمان برای مسیریابی سرویس‌کار</div>
       <div class="small muted">داخل یا جلوی ساختمان دکمه را بزنید؛ پس از تأیید مدیر تعمیرات، سرویس‌کارها با یک لمس مسیریابی می‌کنند.</div>
       <div class="actions"><button class="btn secondary small" data-act="send-location" data-bid="${c.building_id}">ارسال موقعیت ساختمان</button></div></div>` : "";
-    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${locCard}
+    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${periodCard}${locCard}
       <a href="#/contracts" class="small">→ بازگشت</a>
       <div class="card" style="margin-top:8px"><div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
         <div class="small muted">${esc(c.building_address || "")}</div></div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
@@ -1893,6 +1913,7 @@
     if (act === "tech-new-service") sheetTechService(el.dataset.cid).catch((er) => toast(er.message));
     if (act === "send-location") { el.disabled = true; sendLocation(el.dataset.bid).catch((er) => toast(er.message)).finally(() => { el.disabled = false; }); }
     if (act === "go-plan") location.hash = "#/plan";
+    if (act === "contract-tab") { contractTab = el.dataset.k; route(); }
     if (act === "go-locations") location.hash = "#/locations";
     if (act === "new-assignment") sheetNewAssignment().catch((er) => toast(er.message));
     if (act === "plan-go") { planDate = readDate(document, "pday"); route(); }

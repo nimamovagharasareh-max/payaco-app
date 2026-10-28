@@ -434,8 +434,10 @@
     const cur = list.filter((c) => !archived(c)), arc = list.filter(archived);
     const base = contractTab === "archive" ? arc : cur;
     const q = toEn(contractSearch).trim();
-    const shown = q ? base.filter((c) => [c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].some((v) => toEn(v || "").includes(q))) : base;
-    const card = (c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(toEn([c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].join(" ")))}">
+    const key = (c) => toEn([c.contract_code, c.subscription_code, c.building_name, c.customer_name, c.manager_name].join(" "));
+    const shown = base;
+    otherTabKeys = (contractTab === "archive" ? cur : arc).map(key);
+    const card = (c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(key(c))}"${q && !key(c).includes(q) ? ` style="display:none"` : ""}>
         <div class="item-head"><div class="with-key"><span class="call-key" title="کد قرارداد">${esc(fa(String(c.contract_code).split(/[-/]/)[0]))}</span><div><div class="item-title">${esc(c.building_name || "")}</div>
         <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div>
         ${contractTab === "archive" && c.start_date ? `<div class="small muted">${jdate(c.start_date)} تا ${jdate(c.end_date)}</div>` : ""}</div></div>
@@ -447,12 +449,28 @@
       const yearOf = (c) => { if (!c.start_date) return 0; const [y, m, d] = c.start_date.split("-").map(Number); return g2j(y, m, d).jy; };
       const groups = new Map();
       shown.slice().sort((x, y) => yearOf(y) - yearOf(x)).forEach((c) => { const k = yearOf(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); });
-      body = [...groups.entries()].map(([y, cs]) => `<div class="section-title"><h2>قراردادهای سال ${y ? fa(y) : "نامشخص"} (${fa(cs.length)})</h2></div>${cs.map(card).join("")}`).join("");
+      body = [...groups.entries()].map(([y, cs]) => `<div class="cgroup"><div class="section-title"><h2>قراردادهای سال ${y ? fa(y) : "نامشخص"} (${fa(cs.length)})</h2></div>${cs.map(card).join("")}</div>`).join("");
     } else body = shown.map(card).join("");
     return shell(isExternal() ? "صورتحساب‌ها" : "قراردادها", "contracts", `
       ${arc.length ? `<div class="chips"><button data-act="contract-tab" data-k="current" class="${contractTab === "current" ? "on" : ""}">جاری (${fa(cur.length)})</button><button data-act="contract-tab" data-k="archive" class="${contractTab === "archive" ? "on" : ""}">بایگانی (${fa(arc.length)})</button></div>` : ""}
-      ${list.length > 3 ? `<input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}"><div style="height:10px"></div>` : ""}
-      ${body}`);
+      ${list.length > 3 ? `<div class="row"><input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}" style="flex:1"><button class="btn secondary small" data-act="csearch-clear" aria-label="پاک کردن جست‌وجو">پاک کن</button></div><div style="height:10px"></div>` : ""}
+      ${body}<div class="card empty" id="cnone" style="display:none">قراردادی با این جست‌وجو پیدا نشد</div>
+      <div class="card tap" id="cother" data-act="contract-tab" data-k="${contractTab === "archive" ? "current" : "archive"}" style="display:none"></div>`);
+  }
+  let otherTabKeys = [];
+  // client-side filter: every card stays rendered, so clearing the box shows the full list at once
+  function applyContractSearch() {
+    const q = toEn(contractSearch).trim();
+    let shownN = 0;
+    document.querySelectorAll("[data-search]").forEach((card) => { const on = !q || card.dataset.search.includes(q); card.style.display = on ? "" : "none"; if (on) shownN++; });
+    document.querySelectorAll(".cgroup").forEach((g) => { g.style.display = g.querySelector('[data-search]:not([style*="none"])') ? "" : "none"; });
+    const none = document.getElementById("cnone"), other = document.getElementById("cother");
+    if (none) none.style.display = q && !shownN ? "" : "none";
+    if (other) {
+      const n = q ? otherTabKeys.filter((k) => k.includes(q)).length : 0;
+      other.style.display = n ? "" : "none";
+      other.textContent = n ? `${fa(n)} قرارداد هم در ${contractTab === "archive" ? "قراردادهای جاری" : "بایگانی"} پیدا شد؛ برای دیدن بزنید` : "";
+    }
   }
 
   async function viewContract(id) {
@@ -1864,10 +1882,7 @@
       }
       $app.innerHTML = html;
       const s = document.getElementById("csearch");
-      if (s) s.addEventListener("input", () => {
-        contractSearch = s.value; const q = toEn(s.value).trim();
-        document.querySelectorAll("[data-search]").forEach((card) => { card.style.display = !q || card.dataset.search.includes(q) ? "" : "none"; });
-      });
+      if (s) { s.addEventListener("input", () => { contractSearch = s.value; applyContractSearch(); }); applyContractSearch(); }
     } catch (e) {
       if (e instanceof AuthError) return viewLogin("لطفاً دوباره وارد شوید");
       viewError(e);
@@ -1918,6 +1933,7 @@
     if (act === "send-location") { el.disabled = true; sendLocation(el.dataset.bid).catch((er) => toast(er.message)).finally(() => { el.disabled = false; }); }
     if (act === "go-plan") location.hash = "#/plan";
     if (act === "contract-tab") { contractTab = el.dataset.k; route(); }
+    if (act === "csearch-clear") { contractSearch = ""; const i = document.getElementById("csearch"); if (i) i.value = ""; applyContractSearch(); }
     if (act === "go-locations") location.hash = "#/locations";
     if (act === "new-assignment") sheetNewAssignment().catch((er) => toast(er.message));
     if (act === "plan-go") { planDate = readDate(document, "pday"); route(); }

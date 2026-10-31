@@ -331,7 +331,7 @@
 
   async function viewDashboard() {
     const d = await rpc("get_dashboard");
-    const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
+    const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,needs_text,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
     const stats = [];
     // every tile opens the page behind its number (D-66)
     const go = (href, ff, sf) => ` tap" data-act="go" data-href="${href}"${ff ? ` data-ff="${ff}"` : ""}${sf ? ` data-sf="${sf}"` : ""}`;
@@ -387,6 +387,8 @@
     if (can.reportFault()) quick.push(`<button class="btn" data-act="new-fault">+ ثبت خرابی</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="new-service">+ ثبت گزارش سرویس</button>`);
     if (can.changeContract()) quick.push(`<button class="btn secondary" data-act="new-contract">+ قرارداد جدید</button>`);
+    if (canDocs()) quick.push(`<button class="btn secondary" data-act="new-proforma">+ پیش‌فاکتور</button>`, `<button class="btn secondary" data-act="new-invoice">+ فاکتور</button>`);
+    if (isStaff()) quick.push(`<button class="btn secondary" data-act="go" data-href="#/docs">اسناد</button>`);
     const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
     const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
@@ -403,14 +405,14 @@
     return `<div class="card tap" data-act="open-fault" data-id="${f.id}">
       <div class="item-head"><div><div class="item-title">${esc(f.buildings ? f.buildings.name : "")}</div>
       <div class="small muted">${txt(f.fault_description || "")}</div></div>
-      <div style="text-align:left">${badge(PRIORITY, f.priority)}<div style="height:4px"></div>${badge(FAULT_STATUS, f.status)}</div></div>
+      <div style="text-align:left">${badge(PRIORITY, f.priority)}<div style="height:4px"></div>${badge(FAULT_STATUS, f.status)}${f.needs_text ? `<div style="height:4px"></div><span class="badge warn">اعلام نیاز</span>` : ""}</div></div>
       <div class="small muted">${f.subscription_code ? "کد " + esc(fa(f.subscription_code)) + " · " : ""}${f.fault_number ? "شماره " + esc(fa(f.fault_number)) + " · " : ""}${jtime(f.reported_at)}</div></div>`;
   }
 
   let faultFilter = "open";
   async function viewFaults() {
     const filters = { open: "&status=in.(reported,assigned,in_progress)", emergency: "&priority=eq.emergency&status=in.(reported,assigned,in_progress)", all: "" };
-    const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,buildings(name)&order=reported_at.desc&limit=100${filters[faultFilter]}`);
+    const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,needs_text,buildings(name)&order=reported_at.desc&limit=100${filters[faultFilter]}`);
     const chips = [["open", "باز"], ["emergency", "اضطراری"], ["all", "همه"]];
     return shell(role() === "TECHNICIAN" ? "کارهای من" : "خرابی‌ها", "faults", `
       <div class="row">${can.reportFault() ? `<button class="btn" data-act="new-fault">+ ثبت خرابی</button>` : ""}</div>
@@ -567,6 +569,8 @@
     if (can.recordPayment() && invoices.some((i) => !["cancelled", "draft"].includes(i.status) && Number(i.total_rial) > 0)) actions.push(`<button class="btn ok" data-act="pay" data-id="${id}">ثبت دریافت وجه</button>`);
     if (role() === "CEO" && (!opening || opening.status === "draft")) actions.push(`<button class="btn secondary" data-act="opening" data-id="${id}">${opening ? "مانده افتتاحیه (پیش‌نویس)" : "+ مانده افتتاحیه"}</button>`);
     actions.push(`<button class="btn secondary" data-act="contract-report" data-id="${id}">گزارش عملکرد</button>`);
+    if (isStaff() || isExternal()) actions.push(`<button class="btn secondary" data-act="period-statement" data-id="${id}">صورت‌حساب بازه‌ای</button>`);
+    if (canDocs() && ["active", "expired"].includes(c.status)) actions.push(`<button class="btn secondary" data-act="new-proforma" data-id="${id}">+ پیش‌فاکتور</button>`, `<button class="btn secondary" data-act="new-invoice" data-id="${id}">+ فاکتور</button>`);
     if (can.changeContract() && hold && (hold.doc_number || c.status === "active")) actions.push(`<button class="btn secondary" data-act="print-contract" data-id="${id}">${hold.doc_number ? `فایل قرارداد <bdi dir="ltr">${esc(fa(hold.doc_number))}</bdi>` : "فایل قرارداد (پیش‌نویس و صدور)"}</button>`);
     if (role() === "CEO" && hold && !hold.billing_hold && c.status === "active") actions.push(`<button class="btn secondary" data-act="set-hold" data-id="${id}">تعلیق صورتحساب</button>`);
     if (can.changeContract()) {
@@ -653,6 +657,8 @@
         <div class="small muted">تأیید موقعیت‌های ارسالی برای مسیریابی</div></div>${pendingLocs ? `<span class="badge warn">${fa(pendingLocs)} منتظر</span>` : "<span>←</span>"}</div></div>` : ""}
       ${["CEO", "REPAIR_MANAGER"].includes(role()) ? `<div class="card tap" data-act="go-team"><div class="item-head"><div><div class="item-title">سرویس‌کارها و تعمیرکارها</div>
         <div class="small muted">تعریف، تخصص، فعال/غیرفعال${role() === "CEO" ? "، ساخت حساب ورود" : ""}</div></div><span>←</span></div></div>` : ""}
+      ${isStaff() ? `<div class="card tap" data-act="go" data-href="#/docs"><div class="item-head"><div><div class="item-title">اسناد</div>
+        <div class="small muted">پیش‌فاکتورها، فاکتورها و صورتحساب‌ها — مشاهده، چاپ و ارسال</div></div><span>←</span></div></div>` : ""}
       ${can.recordPayment() ? `<div class="card tap" data-act="go" data-href="#/debts"><div class="item-head"><div><div class="item-title">بدهکاران و اسناد پرداخت‌نشده</div>
         <div class="small muted">پیگیری وصول مطالبات</div></div><span>←</span></div></div>` : ""}
       ${can.changeContract() ? `<div class="card tap" data-act="go" data-href="#/renewals"><div class="item-head"><div><div class="item-title">تمدید قراردادها</div>
@@ -734,7 +740,8 @@
   async function sheetFault(id) {
     const [f] = await api(`faults?id=eq.${id}&select=*,buildings(name,address,manager_name,manager_mobile),technicians(name,mobile)`);
     if (!f) return;
-    const repairs = isStaff() ? await api(`repairs?fault_id=eq.${id}&select=id,status,labor_cost_rial,parts_cost_rial,description,invoice_id`) : [];
+    const [repairs, fpf] = isStaff() ? await Promise.all([api(`repairs?fault_id=eq.${id}&select=id,status,labor_cost_rial,parts_cost_rial,description,invoice_id`),
+      api(`proformas?fault_id=eq.${id}&select=id,document_number,status,invoice_id,total_rial,valid_until&order=id.desc`)]) : [[], []];
     const repair = repairs[0];
     const techs = can.manageFaults() ? await loadTechs() : [];
     const isTech = role() === "TECHNICIAN";
@@ -759,11 +766,11 @@
     }
     let repairHtml = "";
     if (repair && repair.status !== "completed" && repair.status !== "cancelled" && isStaff()) {
-      repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">تکمیل تعمیر و صدور فاکتور</div>
+      repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">تکمیل تعمیر</div>
         <label>شرح کار انجام‌شده</label><textarea data-field="rdesc">${esc(repair.description || "")}</textarea>
         ${amountFieldHtml("labor", "دستمزد")}${amountFieldHtml("parts", "قطعات")}
-        <div class="hint">با تکمیل، فاکتور تعمیر (کد ۰۸) خودکار صادر می‌شود.</div>
-        <div class="actions"><button class="btn ok" data-act="complete-repair">تکمیل و صدور فاکتور</button></div></div>`;
+        <div class="hint">مبالغ فقط برای سابقه‌ی تعمیر است؛ فاکتور با دکمه‌ی «صدور فاکتور» جداگانه صادر می‌شود.</div>
+        <div class="actions"><button class="btn ok" data-act="complete-repair">تکمیل تعمیر</button></div></div>`;
     } else if (repair && repair.status === "completed") {
       repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">تعمیر تکمیل شده</div>
         <div class="small">مبلغ: ${money(Number(repair.labor_cost_rial) + Number(repair.parts_cost_rial))}</div></div>`;
@@ -777,7 +784,16 @@
       <dt>مدیر ساختمان</dt><dd>${esc(b.manager_name || "—")} ${b.manager_mobile ? `<a href="tel:${esc(b.manager_mobile)}">${esc(fa(b.manager_mobile))}</a>` : ""}</dd>
       <dt>تکنسین</dt><dd>${esc(f.technicians ? f.technicians.name : "—")}</dd>
       ${f.repaired_at ? `<dt>زمان رفع</dt><dd>${jtime(f.repaired_at)}</dd>` : ""}</dl>
-      ${actions}<div class="actions">${statusBtns.join("")}</div>${repairHtml}${rateHtml}
+      ${actions}<div class="actions">${statusBtns.join("")}</div>
+      ${isTech && !["closed", "cancelled"].includes(f.status) ? `<div class="card" style="margin-top:12px"><div class="item-title">اعلام نیاز (قطعه یا تعمیر اساسی)</div>
+        <textarea data-field="needs" placeholder="مثلاً: شستی طبقه دوم و میکروسوئیچ درب کابین باید تعویض شود">${esc(f.needs_text || "")}</textarea>
+        <div class="hint">دفتر بر اساس این، پیش‌فاکتور برای مشتری صادر می‌کند.</div>
+        <div class="actions"><button class="btn small" data-act="save-needs">ثبت اعلام نیاز</button></div></div>` : ""}
+      ${!isTech && f.needs_text ? `<div class="card" style="margin-top:12px;border-color:var(--warn)"><div class="item-title">اعلام نیاز تعمیرکار</div><div class="small">${txt(f.needs_text)}</div><div class="small muted">${jtime(f.needs_at)}</div></div>` : ""}
+      ${(fpf || []).map((q) => `<div class="card tap" data-act="go-pf" data-id="${q.id}" style="margin-top:8px"><div class="item-head"><div><div class="item-title">پیش‌فاکتور <bdi dir="ltr">${esc(fa(q.document_number))}</bdi></div>
+        <div class="small muted">${q.invoice_id ? "فاکتور شده" : q.status === "approved" ? "تأییدشده — منتظر پرداخت و صدور فاکتور" : ""}</div></div><div style="text-align:left">${money(q.total_rial)}<span class="badge ${pfState(q)[1]}">${pfState(q)[0]}</span></div></div></div>`).join("")}
+      ${repairHtml}
+      ${canDocs() && f.contract_id ? `<div class="actions"><button class="btn secondary small" data-act="fault-proforma">پیش‌فاکتور این خرابی</button><button class="btn secondary small" data-act="fault-invoice">صدور فاکتور این خرابی</button></div>` : ""}${rateHtml}
       <div class="actions"><button class="btn secondary" data-close>بستن</button></div>`,
     (el, close) => {
       if (el.querySelector('[data-amount="labor"]')) { bindAmount(el, "labor"); bindAmount(el, "parts"); }
@@ -792,6 +808,12 @@
           callFunction("notify-tech", { kind: "fault", fault_id: id })
             .then((r) => toast(r.test ? `پیامک ارجاع (آزمایشی) به ${fa(r.to)} رفت` : "پیامک ارجاع برای تعمیرکار فرستاده شد"))
             .catch((er) => toast(er.message));
+        });
+        if (act === "fault-proforma" || act === "fault-invoice") { close(); sheetDoc(act === "fault-proforma" ? "proforma" : "invoice", { contractId: f.contract_id, faultId: id, subject: f.needs_text || f.fault_description }).catch((er) => toast(er.message)); return; }
+        if (act === "go-pf") { close(); location.hash = `#/proforma/${btn.dataset.id}`; return; }
+        if (act === "save-needs") guarded(btn, async () => {
+          await rpc("report_fault_needs", { p_fault_id: id, p_text: el.querySelector('[data-field="needs"]').value.trim() });
+          close(); toast("اعلام نیاز ثبت شد؛ دفتر پیش‌فاکتور صادر می‌کند"); route();
         });
         if (act === "rate-repair") guarded(btn, async () => {
           const r = readStars(el); if (!r) throw new Error("تعداد ستاره را انتخاب کنید");
@@ -808,7 +830,17 @@
           await api(`repairs?id=eq.${repair.id}`, { method: "PATCH", body: { labor_cost_rial: labor.rial, parts_cost_rial: parts.rial, description: el.querySelector('[data-field="rdesc"]').value.trim() || null } });
           await api(`repairs?id=eq.${repair.id}`, { method: "PATCH", body: { status: "completed", repair_end: new Date().toISOString() } });
           if (["in_progress", "assigned"].includes(f.status)) await api(`faults?id=eq.${id}`, { method: "PATCH", body: { status: "repaired" } });
-          close(); toast("تعمیر تکمیل و فاکتور صادر شد"); route();
+          close(); toast("تعمیر تکمیل شد");
+          // D-85: at completion the office decides whether anything must be invoiced
+          const pend = (fpf || []).filter((q) => q.status === "approved" && !q.invoice_id), invoiced = (fpf || []).some((q) => q.invoice_id) || repair.invoice_id;
+          if (pend.length && canDocs()) {
+            if (confirm(`پیش‌فاکتور ${fa(pend[0].document_number)} تأیید شده ولی هنوز فاکتور نشده. اگر مشتری پرداخت کرده، فاکتور صادر شود؟`)) {
+              const inv = await rpc("invoice_from_proforma", { p_id: pend[0].id }); toast("فاکتور صادر شد"); location.hash = `#/doc/${inv}`; return;
+            }
+          } else if (!invoiced && canDocs() && confirm("آیا برای این تعمیر چیزی باید فاکتور شود؟")) {
+            sheetDoc("invoice", { contractId: f.contract_id, faultId: id }).catch((er) => toast(er.message)); return;
+          }
+          route();
         });
       });
     });
@@ -1878,7 +1910,7 @@
   }
 
   function docActions(d, pub) {
-    const a = [`<button class="btn" data-act="doc-print">چاپ / ذخیره PDF</button>`];
+    const a = [pub ? `<button class="btn" data-act="doc-print">چاپ / ذخیره PDF</button>` : `<button class="btn" data-act="inv-print" data-id="${d.id}">چاپ روی سربرگ / PDF</button>`];
     if (!pub && d.token) a.push(`<button class="btn secondary" data-act="doc-share" data-token="${esc(d.token)}" data-no="${esc(d.number || "")}">ارسال لینک برای مشترک</button>`);
     if (!pub && can.recordPayment() && d.status !== "cancelled") a.push(`<button class="btn secondary" data-act="doc-sms" data-id="${d.id}">ارسال پیامک</button>`);
     const open = ["issued", "partially_paid"].includes(d.status);
@@ -2097,8 +2129,7 @@
       ppPaper = e.target.checked; host.classList.toggle("paper", ppPaper);
       try { localStorage.setItem("pp-paper", ppPaper ? "1" : "0"); } catch (er) { /* per-device convenience only */ }
     });
-    host.style.setProperty("--z", "1");
-    build(host); fit();
+    build(host); fit(); // zoom stays fitted while laying out: page overflow is measured in the same zoomed units
     return { wrap: w, close };
   }
 
@@ -2205,6 +2236,264 @@
     openPrint(`پیش‌نمایش متن قرارداد (داده‌ی نمونه)`, (host) => renderContract(host, { ...SAMPLE_CONTRACT(), company, t: { title: "قرارداد سرویس و نگهداری آسانسور", body, rev, issued_on: issued } }));
   }
 
+  /* ------------------------------------------------------------------ proforma & repair invoice (M36, D-81..D-84) */
+  const canDocs = () => ["CEO", "EMPLOYEE", "REPAIR_MANAGER"].includes(role());
+  const PF_STATUS = { issued: ["منتظر تأیید", "warn"], approved: ["تأییدشده", "ok"], rejected: ["ردشده", "danger"], cancelled: ["لغوشده", ""] };
+  const pfState = (p) => (p.status === "issued" && (p.expired || new Date(p.valid_until) < new Date()) ? ["اعتبار تمام‌شده", "danger"] : PF_STATUS[p.status] || [p.status, ""]);
+  const VAT_RATE = 10; // shown in previews only; the database computes the final amounts
+  function docTotalsPreview(items, discount, exempt) {
+    const sub = items.reduce((a, x) => a + Math.round(x.qty * x.unit_price), 0), d = Math.min(Math.max(discount || 0, 0), sub);
+    const vat = exempt ? 0 : Math.round((sub - d) * VAT_RATE / 100);
+    return { sub, d, vat, total: sub - d + vat };
+  }
+  // kind: "proforma" | "invoice"; opts: { contractId, faultId, edit (proforma json) }
+  async function sheetDoc(kind, opts = {}) {
+    const all = (await contractsList()).filter((c) => ["active", "expired"].includes(c.status));
+    if (!all.length) return toast("قراردادی در دسترس نیست");
+    const ed = opts.edit || null, pf = kind === "proforma";
+    const cid = ed ? ed.contract_id : opts.contractId;
+    const rowHtml = (it = {}) => `<div class="card doc-row" data-row="1">
+      <label>شرح کالا / خدمات</label><input type="text" data-r="description" value="${esc(it.description || "")}">
+      <div class="row"><div style="flex:1"><label>تعداد</label><input type="text" class="ltr" inputmode="decimal" data-r="qty" value="${esc(fa(it.qty ?? 1))}"></div>
+        <div style="flex:1"><label>واحد</label><input type="text" data-r="unit" list="dl-unit" value="${esc(it.unit || "")}" placeholder="عدد"></div></div>
+      <label>قیمت واحد</label><input type="text" class="ltr" inputmode="numeric" data-r="price" value="${it.unit_price ? esc(nf.format(it.unit_price / 10)) : ""}">
+      <button type="button" class="btn secondary small" data-act="row-del">حذف ردیف</button></div>`;
+    sheet(`<h3>${ed ? `ویرایش پیش‌فاکتور ${esc(fa(ed.number))}` : pf ? "صدور پیش‌فاکتور" : "صدور فاکتور تعمیرات"}</h3>
+      ${ed ? `<div class="small muted">${esc(ed.building ? ed.building.name : "")}</div>` : `<label>ساختمان / قرارداد</label><select data-field="contract">${all.map((c) => `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${esc(fa(c.contract_code))} · ${esc(c.building_name || "")}</option>`).join("")}</select>`}
+      ${pf ? `<label>موضوع</label><input type="text" data-field="subject" value="${esc((ed && ed.subject) || opts.subject || "")}" placeholder="مثلاً: تعویض تابلو فرمان">` : ""}
+      <label>واحد مبلغ‌ها</label><div class="seg" data-field="unit"><button type="button" data-u="toman" class="on">تومان</button><button type="button" data-u="rial">ریال</button></div>
+      <div data-field="rows">${(ed ? ed.items : [{}]).map(rowHtml).join("")}</div>
+      <datalist id="dl-unit">${["عدد", "دستگاه", "سرویس", "متر", "سری", "دست", "کیلوگرم"].map((x) => `<option value="${x}">`).join("")}</datalist>
+      <button type="button" class="btn secondary small" data-act="row-add">+ ردیف دیگر</button>
+      <label>تخفیف</label><input type="text" class="ltr" inputmode="numeric" data-field="discount" value="${ed && ed.discount ? esc(nf.format(ed.discount / 10)) : ""}" placeholder="0">
+      <label class="check"><input type="checkbox" data-field="exempt"> بدون مالیات بر ارزش افزوده (معاف)</label>
+      <label>توضیحات (اختیاری)</label><input type="text" data-field="notes" value="${esc((ed && ed.notes) || "")}">
+      <div class="card doc-sum" data-field="sum"></div>
+      ${pf ? `<div class="hint">پیش‌فاکتور ۷۲ ساعت از صدور معتبر است و در حساب مشترک اثری ندارد. مدیر ساختمان (از لینک) یا مدیرعامل تأیید می‌کند؛ پس از پرداخت مشتری، دفتر از روی آن فاکتور صادر می‌کند.</div>` : `<div class="hint">فاکتور با صدور در حساب مشترک ثبت می‌شود و فقط با ابطال برمی‌گردد.</div>`}
+      <div class="actions"><button class="btn" data-act="save">${ed ? "ذخیره و صدور دوباره (اعتبار ۷۲ ساعت از نو)" : pf ? "صدور پیش‌فاکتور" : "صدور فاکتور"}</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      const sel = el.querySelector('[data-field="contract"]'), ex = el.querySelector('[data-field="exempt"]'), seg = el.querySelector('[data-field="unit"]');
+      const contractOf = () => all.find((c) => c.id === (ed ? ed.contract_id : Number(sel.value))) || {};
+      ex.checked = ed ? !!ed.vat_exempt : !!contractOf().vat_exempt;
+      if (sel) sel.addEventListener("change", () => { ex.checked = !!contractOf().vat_exempt; calc(); });
+      const mult = () => (seg.querySelector(".on").dataset.u === "toman" ? 10 : 1);
+      const read = () => [...el.querySelectorAll("[data-row]")].map((r) => ({ description: r.querySelector("[data-r=description]").value.trim(),
+        qty: Number(toEn(r.querySelector("[data-r=qty]").value).replace(/[^\d.]/g, "")) || 0, unit: r.querySelector("[data-r=unit]").value.trim(),
+        unit_price: parseAmount(r.querySelector("[data-r=price]").value) * mult() })).filter((x) => x.description || x.unit_price);
+      const calc = () => {
+        const t = docTotalsPreview(read(), parseAmount(el.querySelector('[data-field="discount"]').value) * mult(), ex.checked);
+        el.querySelector('[data-field="sum"]').innerHTML = `<div class="row"><span class="spacer">جمع اقلام</span><b>${money(t.sub)}</b></div>
+          ${t.d ? `<div class="row"><span class="spacer">تخفیف</span><b>−${money(t.d)}</b></div>` : ""}
+          <div class="row"><span class="spacer">مالیات بر ارزش افزوده ${ex.checked ? "(معاف)" : `${fa(VAT_RATE)}٪`}</span><b>${money(t.vat)}</b></div>
+          <div class="row" style="border-top:1px solid var(--line);padding-top:6px"><span class="spacer"><b>${pf ? "جمع پیش‌فاکتور" : "مبلغ فاکتور"}</b></span><b>${money(t.total)}</b></div>`;
+      };
+      el.addEventListener("input", (e) => { const i = e.target; if (i.matches("[data-r=price], [data-field=discount]")) { const v = parseAmount(i.value); i.value = v ? nf.format(v) : ""; } calc(); });
+      ex.addEventListener("change", calc);
+      seg.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b)); calc(); });
+      el.addEventListener("click", (e) => {
+        const a = e.target.closest("[data-act]"); if (!a) return;
+        if (a.dataset.act === "row-add") { el.querySelector('[data-field="rows"]').insertAdjacentHTML("beforeend", rowHtml()); calc(); }
+        if (a.dataset.act === "row-del") { if (el.querySelectorAll("[data-row]").length > 1) a.closest("[data-row]").remove(); calc(); }
+      });
+      calc();
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const items = read();
+        if (!items.length) throw new Error("حداقل یک ردیف وارد کنید");
+        if (items.some((x) => !x.description || !x.qty || !x.unit_price)) throw new Error("برای هر ردیف شرح، تعداد و قیمت واحد لازم است");
+        const p = { contract_id: ed ? ed.contract_id : Number(sel.value), items, discount_rial: parseAmount(el.querySelector('[data-field="discount"]').value) * mult(),
+          vat_exempt: ex.checked, notes: el.querySelector('[data-field="notes"]').value.trim() || null, fault_id: (ed && ed.fault_id) || opts.faultId || null };
+        if (pf) p.subject = el.querySelector('[data-field="subject"]').value.trim() || null;
+        const t = docTotalsPreview(items, p.discount_rial, p.vat_exempt);
+        if (!pf && !confirm(`فاکتور به مبلغ ${num(Math.round(t.total / 10))} تومان صادر و در حساب مشترک ثبت شود؟`)) return;
+        if (pf) { const id = await rpc("save_proforma", { p_id: ed ? ed.id : null, p }); close(); toast(ed ? "پیش‌فاکتور ویرایش شد" : "پیش‌فاکتور صادر شد"); location.hash = `#/proforma/${id}`; if (ed) route(); }
+        else { const id = await rpc("create_repair_invoice_manual", { p }); close(); toast("فاکتور صادر شد"); location.hash = `#/doc/${id}`; }
+      }));
+    });
+  }
+
+  let docsTab = "proforma";
+  async function viewDocs() {
+    const tabs = [["proforma", "پیش‌فاکتورها"], ["repair_invoice", "فاکتورها"], ["statement", "صورتحساب‌ها"]];
+    let list;
+    if (docsTab === "proforma") {
+      const rows = await api("proformas?select=id,document_number,status,total_rial,issued_at,valid_until,subject,contract_id,contracts(contract_code,buildings(name))&order=id.desc&limit=300");
+      list = rows.map((p) => { const c = p.contracts || {}, st = pfState(p);
+        return `<div class="card tap" data-act="go" data-href="#/proforma/${p.id}"><div class="item-head"><div><div class="item-title">${esc(c.buildings ? c.buildings.name : "")}</div>
+          <div class="small muted">پیش‌فاکتور <bdi dir="ltr">${esc(fa(p.document_number))}</bdi> · قرارداد ${esc(fa(c.contract_code || ""))} · ${jtime(p.issued_at)}${p.subject ? " · " + esc(p.subject) : ""}</div></div>
+          <div style="text-align:left">${money(p.total_rial)}<span class="badge ${st[1]}">${st[0]}</span></div></div></div>`; });
+    } else {
+      const rows = await api(`invoices?document_type=eq.${docsTab}&select=id,document_number,issue_date,total_rial,status,contract_id,contracts(contract_code,buildings(name))&order=id.desc&limit=300`);
+      list = rows.map((i) => { const c = i.contracts || {};
+        return `<div class="card tap" data-act="go" data-href="#/doc/${i.id}"><div class="item-head"><div><div class="item-title">${esc(c.buildings ? c.buildings.name : "")}</div>
+          <div class="small muted">${DOC_TYPE[docsTab]} <bdi dir="ltr">${esc(fa(i.document_number || ""))}</bdi> · قرارداد ${esc(fa(c.contract_code || ""))} · ${jdate(i.issue_date)}</div></div>
+          <div style="text-align:left">${money(i.total_rial)}${badge(INVOICE_STATUS, i.status)}</div></div></div>`; });
+    }
+    const quick = canDocs() ? `<div class="row"><button class="btn" data-act="new-proforma">+ پیش‌فاکتور</button><button class="btn secondary" data-act="new-invoice">+ فاکتور</button></div><div style="height:8px"></div>` : "";
+    return shell("اسناد", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a><div style="height:8px"></div>${quick}
+      <div class="chips">${tabs.map(([k, l]) => `<button data-act="docs-tab" data-k="${k}" class="${docsTab === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${list.length ? list.join("") : `<div class="card empty">سندی نیست</div>`}`);
+  }
+
+  async function viewProforma(id) {
+    const p = await rpc("get_proforma", { p_id: id });
+    const st = pfState(p), open = p.status === "issued" && !(p.expired || new Date(p.valid_until) < new Date());
+    const items = (p.items || []).map((it, k) => `<tr><td class="c">${fa(k + 1)}</td><td>${esc(it.description)}<div class="small muted">${fa(it.qty)} ${esc(it.unit || "")} × ${num(Math.round(it.unit_price / 10))} تومان</div></td><td class="n">${num(Math.round(it.amount / 10))}</td></tr>`).join("");
+    const acts = [`<button class="btn" data-act="pf-print" data-id="${id}">چاپ / PDF</button>`];
+    if (p.status === "issued" && canDocs()) acts.push(`<button class="btn secondary" data-act="pf-share" data-code="${esc(p.code || "")}" data-no="${esc(p.number)}">لینک تأیید برای مدیر ساختمان</button>`, `<button class="btn secondary" data-act="pf-edit" data-id="${id}">ویرایش${open ? "" : " و صدور دوباره"}</button>`);
+    if (open && role() === "CEO") acts.push(`<button class="btn ok" data-act="pf-approve" data-id="${id}">تأیید از طرف کارفرما</button>`, `<button class="btn danger" data-act="pf-reject" data-id="${id}">رد</button>`);
+    if (p.status === "issued" && canDocs()) acts.push(`<button class="btn secondary" data-act="pf-cancel" data-id="${id}">لغو</button>`);
+    if (p.status === "approved" && !p.invoice_id && canDocs()) acts.unshift(`<button class="btn ok" data-act="pf-invoice" data-id="${id}">صدور فاکتور (پس از پرداخت مشتری)</button>`);
+    return shell(`پیش‌فاکتور ${fa(p.number)}`, "more", `<a href="#/docs" data-act="back" class="small">→ بازگشت</a>
+      <div class="card" style="margin-top:8px"><div class="item-head"><div><div class="item-title">${esc(p.building ? p.building.name : "")}</div>
+        <div class="small muted">قرارداد ${esc(fa(p.contract ? p.contract.code : ""))}${p.subject ? " · " + esc(p.subject) : ""}</div></div><span class="badge ${st[1]}">${st[0]}</span></div>
+        <div class="small">صدور ${jtime(p.issued_at)} · اعتبار تا ${jtime(p.valid_until)}</div>
+        ${p.status === "approved" ? `<div class="small ok">تأیید: ${esc(p.decided_name || "")} · ${jtime(p.decided_at)}${p.invoice_id ? ` — فاکتور <a href="#/doc/${p.invoice_id}"><bdi dir="ltr">${esc(fa(p.invoice_number || ""))}</bdi></a>` : " — منتظر پرداخت مشتری و صدور فاکتور"}</div>` : ""}
+        ${p.status === "rejected" || p.status === "cancelled" ? `<div class="small debt">${p.status === "rejected" ? "رد" : "لغو"}: ${esc(p.decided_name || "")} ${p.decision_note ? "· " + esc(p.decision_note) : ""}</div>` : ""}
+        <table class="list doc-items" style="margin-top:8px"><thead><tr><th>ردیف</th><th>شرح</th><th>مبلغ (تومان)</th></tr></thead><tbody>${items}</tbody></table>
+        <dl class="kv"><dt>جمع</dt><dd>${money(p.subtotal)}</dd>${p.discount ? `<dt>تخفیف</dt><dd>−${money(p.discount)}</dd>` : ""}
+        <dt>مالیات بر ارزش افزوده</dt><dd>${p.vat_exempt ? "معاف" : money(p.vat)}</dd><dt><b>جمع کل</b></dt><dd><b>${money(p.total)}</b></dd></dl>
+        <div class="actions">${acts.join("")}</div></div>`);
+  }
+
+  // approval: keep some rows or lower quantities (D-83/D-84)
+  function sheetApproveProforma(p, onDone, publicCode) {
+    sheet(`<h3>تأیید پیش‌فاکتور ${esc(fa(p.number))}</h3>
+      <div class="hint">ردیف‌هایی را که تأیید نمی‌شوند از تیک خارج کنید یا تعدادشان را کم کنید${p.discount ? "؛ تخفیف به همان نسبت کم می‌شود" : ""}. پس از پرداخت، دفتر فاکتور همین ردیف‌ها را صادر می‌کند.</div>
+      ${(p.items || []).map((it, k) => `<div class="card" data-ai="${k}"><label class="check"><input type="checkbox" data-a="on" checked> ${esc(it.description)}</label>
+        <div class="row"><span class="small muted spacer">${num(Math.round(it.unit_price / 10))} تومان × </span><input type="text" class="ltr" inputmode="decimal" data-a="qty" value="${esc(fa(it.qty))}" style="width:80px"> <span class="small">${esc(it.unit || "")} (حداکثر ${fa(it.qty)})</span></div></div>`).join("")}
+      ${publicCode ? `<label>نام تأییدکننده</label><input type="text" data-field="name" placeholder="نام و نام خانوادگی">` : ""}
+      <label>توضیح (اختیاری)</label><input type="text" data-field="note" placeholder="${publicCode ? "" : "مثلاً: تأیید تلفنی آقای ..."}">
+      <div class="card doc-sum" data-field="sum"></div>
+      <div class="actions"><button class="btn ok" data-act="save">تأیید پیش‌فاکتور</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      const rows = () => [...el.querySelectorAll("[data-ai]")].map((b) => ({ i: Number(b.dataset.ai), on: b.querySelector("[data-a=on]").checked, qty: Number(toEn(b.querySelector("[data-a=qty]").value).replace(/[^\d.]/g, "")) || 0 }));
+      const calc = () => {
+        const sel = rows().filter((r) => r.on && r.qty > 0).map((r) => ({ qty: r.qty, unit_price: p.items[r.i].unit_price }));
+        const sub = sel.reduce((a, x) => a + Math.round(x.qty * x.unit_price), 0), d = p.subtotal ? Math.round(p.discount * sub / p.subtotal) : 0;
+        const vat = p.vat_exempt ? 0 : Math.round((sub - d) * VAT_RATE / 100);
+        el.querySelector('[data-field="sum"]').innerHTML = `<div class="row"><span class="spacer">مبلغ قابل پرداخت</span><b>${money(sub - d + vat)}</b></div><div class="small muted">اقلام ${money(sub)}${d ? ` · تخفیف ${money(d)}` : ""} · مالیات ${p.vat_exempt ? "معاف" : money(vat)}</div>`;
+      };
+      el.addEventListener("input", calc); el.addEventListener("change", calc); calc();
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const rs = rows();
+        for (const r of rs) if (r.on && r.qty > Number(p.items[r.i].qty)) throw new Error("تعداد تأییدشده از پیش‌فاکتور بیشتر است");
+        const sel = rs.filter((r) => r.on && r.qty > 0).map((r) => ({ i: r.i, qty: r.qty }));
+        if (!sel.length) throw new Error("هیچ ردیفی تأیید نشده است");
+        const note = el.querySelector('[data-field="note"]').value.trim() || null;
+        if (publicCode) {
+          const name = el.querySelector('[data-field="name"]').value.trim(); if (!name) throw new Error("نام خود را بنویسید");
+          const r = await publicRpc("decide_proforma_by_code", { p_code: publicCode, p_approve: true, p_rows: sel, p_name: name, p_note: note });
+          close(); onDone(r);
+        } else {
+          if (!confirm("پیش‌فاکتور از طرف کارفرما تأیید شود؟")) return;
+          const inv = await rpc("decide_proforma", { p_id: p.id, p_approve: true, p_rows: sel, p_note: note });
+          close(); onDone(inv);
+        }
+      }));
+    });
+  }
+
+  // public page for the building manager: /?p=<code> or #/pf/<code>
+  async function viewPublicProforma(code) {
+    $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
+    let p;
+    try { p = await publicRpc("get_proforma_by_code", { p_code: code }); } catch (e) {
+      $app.innerHTML = `<div class="login-wrap"><div class="login-card"><h1>پیش‌فاکتور پیدا نشد</h1><p class="muted">لینک نادرست است. با دفتر پایاکو تماس بگیرید.</p></div></div>`; return;
+    }
+    const st = pfState(p), open = p.status === "issued" && !p.expired;
+    $app.innerHTML = `<main class="doc-page"><div class="pp-pages screen-doc"></div>
+      <div class="actions no-print doc-actions">${open ? `<button class="btn ok" data-act="pub-pf-approve">تأیید پیش‌فاکتور</button><button class="btn secondary" data-act="pub-pf-reject">رد</button>` : `<span class="badge ${st[1]}">${st[0]}</span>`}
+      <button class="btn secondary" data-act="doc-print">چاپ / ذخیره PDF</button></div>
+      ${open ? `<div class="hint no-print">اعتبار تا ${jtime(p.valid_until)}. می‌توانید فقط بخشی از ردیف‌ها را تأیید کنید. پس از تأیید و پرداخت، فاکتور صادر و تعمیر انجام می‌شود.</div>` : ""}
+      ${p.status === "approved" ? `<div class="hint">این پیش‌فاکتور در ${jtime(p.decided_at)} تأیید شد.</div>` : ""}</main>`;
+    const host = $app.querySelector(".pp-pages"); host.style.setProperty("--z", String(Math.min(1, (window.innerWidth - 16) / 794)));
+    renderProformaPages(host, p);
+    $app.onclick = (e) => {
+      const a = e.target.closest("[data-act]"); if (!a) return;
+      if (a.dataset.act === "pub-pf-approve") sheetApproveProforma(p, () => { toast("تأیید شد؛ سپاسگزاریم"); viewPublicProforma(code); }, code);
+      if (a.dataset.act === "pub-pf-reject") {
+        const name = prompt("نام شما:"); if (!name) return;
+        const note = prompt("دلیل رد (اختیاری):") || null;
+        publicRpc("decide_proforma_by_code", { p_code: code, p_approve: false, p_rows: null, p_name: name, p_note: note }).then(() => { toast("رد شد"); viewPublicProforma(code); }).catch((er) => toast(er.message));
+      }
+      if (a.dataset.act === "doc-print") window.print();
+    };
+  }
+
+  /* print renderers on the letterhead: G04 statement, G06 repair invoice, G07 proforma */
+  const tbl = (head, rows) => `<table class="pp-items"><thead><tr>${head.map(([h, w]) => `<th${w ? ` style="width:${w}"` : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+  const sumTbl = (rows) => `<table class="pp-sum">${rows.map(([l, v, cls]) => `<tr class="${cls || ""}"><td>${l}</td><td class="n">${v}</td></tr>`).join("")}</table>`;
+  const ppBank = (c) => (c.card_no || c.sheba) ? `<div class="pp-box"><h3>اطلاعات واریز${c.bank ? " — " + esc(c.bank) : ""}${c.account_holder ? " — به نام " + esc(c.account_holder) : ""}</h3>
+    ${c.card_no ? `<div class="r"><span>شماره کارت</span><span class="pp-mono">${esc(groupCard(c.card_no))}</span></div>` : ""}${c.sheba ? `<div class="r"><span>شماره شبا</span><span class="pp-mono">${esc(toEn(c.sheba).toUpperCase())}</span></div>` : ""}</div>` : "";
+  const ppInfo = (rows) => `<table class="pp-info">${rows.map((r) => `<tr>${r.map(([k, v], i) => `<td class="k">${k}</td><td${r.length === 1 ? ' colspan="3"' : ""}>${v}</td>`).join("")}</tr>`).join("")}</table>`;
+  function renderProformaPages(host, p) {
+    const c = p.company || {};
+    const rows = (p.items || []).map((it, k) => `<tr><td class="c">${fa(k + 1)}</td><td>${esc(it.description)}</td><td class="c">${fa(it.qty)}</td><td class="c">${esc(it.unit || "")}</td><td class="n">${num(it.unit_price)}</td><td class="n">${num(it.amount)}</td></tr>`).join("");
+    const head = `<div class="pp-title"><h1>پیش‌فاکتور تعمیرات<small>صدور ${jtime(p.issued_at)} · اعتبار ۷۲ ساعت تا ${jtime(p.valid_until)}</small></h1><span class="pp-chip y">${esc(pfState(p)[0])}</span></div><div class="pp-rule"></div>
+      ${ppInfo([[["مشترک", esc((p.building && p.building.name) || "")], ["شماره قرارداد", esc(fa((p.contract && p.contract.code) || ""))]], ...(p.subject ? [[["موضوع", esc(p.subject)]]] : [])])}`;
+    paginate(host, { no: p.number, date: jdateTz(p.issued_at), form: "PY-FO-PC-G07", rev: 0, issued: "۱۴۰۵/۰۸/۰۹" }, c, head, [
+      tbl([["ردیف", "9mm"], ["شرح کالا / خدمات"], ["تعداد", "14mm"], ["واحد", "14mm"], ["فی (ریال)", "28mm"], ["مبلغ (ریال)", "30mm"]], rows) +
+      sumTbl([["جمع", num(p.subtotal)], ...(p.discount ? [["تخفیف", "−" + num(p.discount)]] : []), ["مالیات بر ارزش افزوده" + (p.vat_exempt ? " (معاف)" : ` ${fa(Number(p.vat_rate))}٪`), num(p.vat)], ["جمع کل پیش‌فاکتور", num(p.total), "pay"]]),
+      `<div class="pp-words">به حروف: <b>${numWords(p.total)} ریال</b> (معادل ${num(Math.round(p.total / 10))} تومان)</div>`,
+      `<div class="pp-box y"><h3>شرایط</h3><div>۱. طبق قرارداد سرویس و نگهداری، هزینه‌ی تعمیرات کلی از راه پیش‌فاکتور اعلام می‌شود و پس از تأیید کارفرما، تعمیر انجام می‌گیرد.</div>
+        <div>۲. این پیش‌فاکتور سند بدهی نیست؛ با تأیید، فاکتور تعمیرات صادر و در حساب ثبت می‌شود.</div><div>۳. این پیش‌فاکتور ۷۲ ساعت از زمان صدور معتبر است.</div></div>`,
+      `<div class="pp-signs"><div><b>تأیید کارفرما</b>با شرح و مبلغ بالا موافقم. نام، تاریخ و امضا</div><div><b>پایاکو</b>مهر و امضا</div></div>`], {});
+  }
+  function renderInvoicePages(host, d) {
+    const c = d.company || {}, st = d.type === "statement";
+    const items = (d.items || []).filter((it) => it.type !== "tax"), tax = (d.items || []).filter((it) => it.type === "tax").reduce((a, x) => a + Number(x.amount), 0);
+    const rows = items.map((it, k) => st ? `<tr><td class="c">${fa(k + 1)}</td><td>${txt(it.description)}</td><td class="n">${it.dc === "credit" ? "−" : ""}${num(it.amount)}</td></tr>`
+      : `<tr><td class="c">${fa(k + 1)}</td><td>${txt(it.description)}</td><td class="c">${fa(Number(it.qty))}</td><td class="c">${esc(it.unit || "")}</td><td class="n">${num(it.unit_price)}</td><td class="n">${num(it.amount)}</td></tr>`).join("");
+    const itemsSum = items.reduce((a, x) => a + (x.dc === "credit" ? -1 : 1) * Number(x.amount), 0);
+    const bal = Number(d.account_balance || 0);
+    const head = `<div class="pp-title"><h1>${st ? "صورتحساب سرویس و نگهداری" : "فاکتور تعمیرات"}${d.proforma_number ? `<small>بر اساس پیش‌فاکتور ${esc(fa(d.proforma_number))}</small>` : ""}</h1><span class="pp-chip">کد اشتراک ${esc(fa((d.contract && d.contract.subscription) || ""))}</span></div><div class="pp-rule"></div>
+      ${ppInfo([[["مشترک", esc((d.building && d.building.name) || (d.customer && d.customer.name) || "")], ["شماره قرارداد", esc(fa((d.contract && d.contract.code) || ""))]], ...(d.building && d.building.address ? [[["نشانی", esc(fa(d.building.address))]]] : [])])}`;
+    const sums = [["جمع", num(itemsSum)], ...(Number(d.discount) ? [["تخفیف", "−" + num(d.discount)]] : []), ...(tax ? [["مالیات بر ارزش افزوده", num(tax)]] : d.vat_exempt ? [["مالیات بر ارزش افزوده", "معاف"]] : []),
+      ["مبلغ این " + (st ? "صورتحساب" : "فاکتور"), num(d.total), "s"], ...(Number(d.previous_balance) ? [["مانده‌ی حساب پیش از این سند" + (Number(d.previous_balance) < 0 ? " (بستانکار)" : ""), num(Math.abs(d.previous_balance))]] : []),
+      [bal < 0 ? "مانده‌ی بستانکاری شما" : "مبلغ قابل پرداخت (مانده‌ی فعلی حساب)", num(Math.abs(bal)), "pay"]];
+    const code = d.public_token ? "" : "";
+    paginate(host, { no: d.number, date: jdate(d.issue_date), form: st ? "PY-FO-PC-G04" : "PY-FO-PC-G06", rev: 0, issued: "۱۴۰۵/۰۸/۰۹" }, c, head, [
+      (st ? tbl([["ردیف", "9mm"], ["شرح"], ["مبلغ (ریال)", "34mm"]], rows) : tbl([["ردیف", "9mm"], ["شرح کالا / خدمات"], ["تعداد", "14mm"], ["واحد", "14mm"], ["فی (ریال)", "26mm"], ["مبلغ (ریال)", "28mm"]], rows)) + sumTbl(sums),
+      bal > 0 ? `<div class="pp-words">به حروف: <b>${numWords(bal)} ریال</b> (معادل ${num(Math.round(bal / 10))} تومان)</div>` : "",
+      `<div class="pp-cols">${ppBank(c)}<div class="pp-box"><h3>اعلام واریز آنلاین</h3><div class="small">پس از واریز، از لینکی که برایتان پیامک شده شماره پیگیری را اعلام کنید.</div></div></div>`,
+      st ? `<div class="pp-stamp">این سند در سامانه‌ی پایاکو صادر شده است.</div>` : `<div class="pp-signs"><div><b>تحویل‌گیرنده (مدیر ساختمان)</b>نام، تاریخ و امضا</div><div><b>پایاکو</b>مهر و امضا</div></div>`].filter(Boolean), {});
+    return code;
+  }
+  async function printInvoiceDoc(id) {
+    const d = await rpc("get_invoice_document", { p_invoice_id: id });
+    openPrint(`${DOC_TITLE[d.type] || "سند"} ${fa(d.number || "")}`, (host) => renderInvoicePages(host, d));
+  }
+  async function printProforma(id) {
+    const p = await rpc("get_proforma", { p_id: id });
+    openPrint(`پیش‌فاکتور ${fa(p.number)}`, (host) => renderProformaPages(host, p));
+  }
+
+  /* G05: period account statement from the ledger */
+  function sheetPeriodStatement(contractId) {
+    const t = todayTehran(), [y, m, d] = t.split("-").map(Number), j = g2j(y, m, d), g = j2g(j.jy, 1, 1);
+    sheet(`<h3>صورت‌حساب بازه‌ای</h3><label>از تاریخ</label>${datePickerHtml("sf", `${g.gy}-${pad(g.gm)}-${pad(g.gd)}`)}<label>تا تاریخ</label>${datePickerHtml("st", t)}
+      <div class="actions"><button class="btn" data-act="save">نمایش و چاپ</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+      const from = readDate(el, "sf"), to = readDate(el, "st"); if (from > to) throw new Error("بازه نامعتبر است");
+      const [[c], led, company] = await Promise.all([api(`v_contract_overview?id=eq.${contractId}&select=*`),
+        api(`ledger?contract_id=eq.${contractId}&transaction_date=lte.${to}&select=transaction_date,description,debit_rial,credit_rial,invoice_id,invoices(document_number)&order=transaction_date.asc,id.asc`), rpc("get_company_profile")]);
+      let open = 0; const rows = [];
+      led.forEach((l) => { const v = Number(l.debit_rial) - Number(l.credit_rial); if (l.transaction_date < from) open += v; else rows.push(l); });
+      let run = open, dS = 0, cS = 0;
+      const tr = rows.map((l) => { run += Number(l.debit_rial) - Number(l.credit_rial); dS += Number(l.debit_rial); cS += Number(l.credit_rial);
+        return `<tr><td>${jdate(l.transaction_date)}</td><td>${txt(l.description)}</td><td class="n">${esc(fa((l.invoices && l.invoices.document_number) || "—"))}</td><td class="n">${Number(l.debit_rial) ? num(l.debit_rial) : ""}</td><td class="n cr">${Number(l.credit_rial) ? num(l.credit_rial) : ""}</td><td class="n"><b>${num(run)}</b></td></tr>`; }).join("");
+      close();
+      const head = `<div class="pp-title"><h1>صورت‌حساب مشترک<small>گردش حساب از ${jdate(from)} تا ${jdate(to)}</small></h1><span class="pp-chip">کد اشتراک ${esc(fa(c.subscription_code || ""))}</span></div><div class="pp-rule"></div>
+        ${ppInfo([[["مشترک", esc(c.building_name || "")], ["شماره قرارداد", esc(fa(c.contract_code))]], [["مانده‌ی ابتدای بازه", `${num(Math.abs(open))} ریال${open < 0 ? " بستانکار" : ""}`], ["مانده‌ی پایان بازه", `<b>${num(Math.abs(run))} ریال ${run > 0 ? "بدهکار" : run < 0 ? "بستانکار" : ""}</b>`]]])}`;
+      openPrint(`صورت‌حساب ${fa(c.contract_code)}`, (host) => paginate(host, { no: "—", date: jdate(todayTehran()), form: "PY-FO-PC-G05", rev: 0, issued: "۱۴۰۵/۰۸/۰۹" }, company, head, [
+        tbl([["تاریخ", "18mm"], ["شرح"], ["سند مرجع", "20mm"], ["بدهکار", "22mm"], ["بستانکار", "22mm"], ["مانده", "24mm"]], (tr || `<tr><td colspan="6" class="c">در این بازه گردشی نیست</td></tr>`) +
+          `<tr><td></td><td><b>جمع گردش بازه</b></td><td></td><td class="n"><b>${num(dS)}</b></td><td class="n"><b>${num(cS)}</b></td><td></td></tr>`) + `<div class="pp-sub">مبالغ به ریال</div>` +
+        sumTbl([[run < 0 ? "مانده‌ی بستانکاری در پایان بازه" : "مانده‌ی بدهی در پایان بازه", num(Math.abs(run)), "pay"]]),
+        run > 0 ? `<div class="pp-words">به حروف: <b>${numWords(run)} ریال</b> (معادل ${num(Math.round(run / 10))} تومان)</div>` : "",
+        `<div class="pp-cols">${ppBank(company)}</div>`, `<div class="pp-stamp">این گزارش از دفتر حساب سامانه‌ی پایاکو تهیه شده است.</div>`].filter(Boolean), {}));
+    })));
+  }
+
   /* ------------------------------------------------------------------ router */
   async function ensureProfile() {
     if (state.profile) return state.profile;
@@ -2214,7 +2503,7 @@
   }
 
   // D-80: every list page can be searched by code or building name (client-side, on what is already loaded)
-  const SEARCH_PAGES = ["faults", "services", "plan", "debts", "renewals", "opening", "requests", "claims", "team", "locations"];
+  const SEARCH_PAGES = ["docs", "faults", "services", "plan", "debts", "renewals", "opening", "requests", "claims", "team", "locations"];
   const listQuery = {};
   function injectListSearch(pg) {
     const v = document.getElementById("view"); if (!v) return;
@@ -2240,6 +2529,10 @@
     // short SMS link form that works on any static host: https://app.payaco.org/?c=<code>
     const qc = new URLSearchParams(location.search).get("c");
     if (qc && /^[a-zA-Z0-9]{6,16}$/.test(qc) && !location.hash) { history.replaceState(null, "", location.pathname + "#/c/" + qc); return viewPublicDoc(null, qc); }
+    const qp = new URLSearchParams(location.search).get("p");
+    if (qp && /^[a-zA-Z0-9]{6,16}$/.test(qp) && !location.hash) { history.replaceState(null, "", location.pathname + "#/pf/" + qp); return viewPublicProforma(qp); }
+    const pp = location.hash.match(/^#\/pf\/([a-zA-Z0-9]{6,16})$/);
+    if (pp) return viewPublicProforma(pp[1]);
     if (!session) return viewLogin();
     let p;
     try { p = await ensureProfile(); } catch (e) { if (e instanceof AuthError) return viewLogin(); return viewError(e); }
@@ -2283,6 +2576,8 @@
         case "close": html = isStaff() ? await viewMonthClose() : await viewDashboard(); break;
         case "renewals": html = can.changeContract() ? await viewRenewals() : await viewDashboard(); break;
         case "debts": html = can.recordPayment() ? await viewDebts() : await viewDashboard(); break;
+        case "docs": html = isStaff() ? await viewDocs() : await viewDashboard(); break;
+        case "proforma": html = await viewProforma(Number(arg)); break;
         case "templates": html = role() === "CEO" ? await viewTemplates() : await viewDashboard(); break;
         case "reports": html = role() === "CEO" ? await viewReports() : await viewDashboard(); break;
         case "dashboard": html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard(); break;
@@ -2327,6 +2622,22 @@
     if (act === "go") { if (el.dataset.ff) faultFilter = el.dataset.ff; if (el.dataset.sf) serviceFilter = el.dataset.sf; const h = el.dataset.href.split("?"); if (h[1]) debtTab = h[1]; location.hash = h[0]; }
     if (act === "users-fold") usersOpen = !el.parentElement.open;
     if (act === "print-contract") printContract(id).catch((er) => toast(er.message));
+    if (act === "new-proforma") sheetDoc("proforma", { contractId: id || null }).catch((er) => toast(er.message));
+    if (act === "new-invoice") sheetDoc("invoice", { contractId: id || null }).catch((er) => toast(er.message));
+    if (act === "docs-tab") { docsTab = el.dataset.k; route(); }
+    if (act === "inv-print") printInvoiceDoc(id).catch((er) => toast(er.message));
+    if (act === "pf-print") printProforma(id).catch((er) => toast(er.message));
+    if (act === "period-statement") sheetPeriodStatement(id);
+    if (act === "pf-edit") rpc("get_proforma", { p_id: id }).then((p) => sheetDoc("proforma", { edit: p })).catch((er) => toast(er.message));
+    if (act === "pf-approve") rpc("get_proforma", { p_id: id }).then((p) => sheetApproveProforma(p, () => { toast("پیش‌فاکتور تأیید شد"); route(); })).catch((er) => toast(er.message));
+    if (act === "pf-invoice" && confirm("مشتری پرداخت کرده و فاکتور ردیف‌های تأییدشده صادر شود؟ فاکتور در حساب مشترک ثبت می‌شود و بعد می‌توانید دریافت وجه را روی آن ثبت کنید."))
+      rpc("invoice_from_proforma", { p_id: id }).then((inv) => { toast("فاکتور صادر شد"); location.hash = `#/doc/${inv}`; }).catch((er) => toast(er.message));
+    if (act === "pf-reject") { const note = prompt("دلیل رد از طرف کارفرما:"); if (note !== null) rpc("decide_proforma", { p_id: id, p_approve: false, p_note: note.trim() || null }).then(() => { toast("رد شد"); route(); }).catch((er) => toast(er.message)); }
+    if (act === "pf-cancel") { const note = prompt("دلیل لغو پیش‌فاکتور:"); if (note !== null) rpc("cancel_proforma", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
+    if (act === "pf-share") {
+      const url = `${location.origin}${location.pathname}?p=${el.dataset.code}`, text = `پیش‌فاکتور پایاکو شماره ${fa(el.dataset.no)} — برای مشاهده و تأیید:`;
+      if (navigator.share) navigator.share({ title: text, text, url }).catch(() => {}); else copyText(url);
+    }
     if (act === "tpl-key") {
       const ta = document.getElementById("tpl-body"), k = el.dataset.k, block = k.startsWith("[[");
       const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a, ins = block ? `\n${k}\n` : k;

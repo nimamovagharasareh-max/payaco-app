@@ -503,3 +503,34 @@ body.pp-open #app, body.pp-open #toast:not(.show) { display: none; }
 a.nima-credit { text-decoration: none; }
 .lsearch { margin: 8px 0 10px; }
 @media print { .refresh-btn, .page-credit { display: none !important; } }
+
+/* v2.27: invoices, proformas and statements on the letterhead (G04-G07) */
+.pp-title { display: flex; align-items: center; justify-content: space-between; gap: 4mm; margin-bottom: 3.5mm; }
+.pp-title h1 { margin: 0; font-size: 15pt; font-weight: 900; color: var(--g); }
+.pp-title h1 small { display: block; font-size: 8.5pt; font-weight: 600; color: var(--mut); }
+.pp-rule { height: 1.2mm; background: linear-gradient(to left, var(--g) 0 62%, var(--y) 62% 100%); border-radius: 1mm; margin: 0 0 4mm; }
+.pp-info { border: .3mm solid var(--ln); border-radius: 2mm; margin-bottom: 4mm; width: 100%; border-collapse: collapse; }
+.pp-info td { padding: 1.4mm 2.6mm; border-bottom: .2mm solid #e6eaf0; font-size: 9pt; vertical-align: top; }
+.pp-info td.k { color: var(--mut); width: 22mm; white-space: nowrap; background: #f6f8f5; }
+.pp-items th { background: var(--g); color: #fff; font-weight: 700; font-size: 8.6pt; padding: 1.8mm 2mm; text-align: right; }
+.pp-items td { padding: 1.6mm 2mm; border-bottom: .2mm solid #e3e7ee; font-size: 9pt; vertical-align: top; }
+.pp-items td.c { text-align: center; } .pp-page .n, .doc-sum .n { text-align: left; direction: ltr; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pp-items td.cr { color: #1d7a33; }
+.pp-items tbody tr:nth-child(even) td { background: #fafbfc; }
+.pp-sum { width: 92mm !important; margin-right: auto; margin-top: 2mm; border-collapse: collapse; }
+.pp-sum td { padding: 1.2mm 2mm; font-size: 9pt; border-bottom: .2mm dashed #e3e7ee; }
+.pp-sum tr.s td { font-weight: 800; border-top: .4mm solid #c9d1dc; }
+.pp-sum tr.pay td { background: var(--y2); font-weight: 900; font-size: 11pt; border-top: .6mm solid var(--y); border-bottom: 0; }
+.pp-words { margin: 3mm 0; padding: 2mm 3mm; background: #f4f7f2; border-radius: 2mm; font-size: 9pt; }
+.pp-cols { display: flex; gap: 4mm; } .pp-cols > * { flex: 1; }
+.pp-box { border: .35mm solid var(--g); border-radius: 2.4mm; padding: 2.4mm 3mm; font-size: 8.8pt; margin-bottom: 2mm; }
+.pp-box.y { border-color: var(--y); } .pp-box h3 { margin: 0 0 1mm; font-size: 9pt; color: var(--g); } .pp-box.y h3 { color: #7a5600; }
+.pp-box .r { display: flex; justify-content: space-between; gap: 2mm; border-bottom: .2mm dashed #e3e7ee; padding: .6mm 0; }
+.pp-mono { font-family: ui-monospace, Menlo, monospace; direction: ltr; font-weight: 700; }
+.pp-signs { display: flex; gap: 6mm; margin-top: 4mm; } .pp-signs div { flex: 1; height: 24mm; border: .3mm solid var(--ln); border-radius: 2.4mm; padding: 2mm 3mm; font-size: 8.6pt; color: var(--mut); }
+.pp-signs b { display: block; color: var(--ink); }
+.pp-stamp { margin-top: 3mm; font-size: 7.8pt; color: #8a929e; text-align: center; }
+.screen-doc { padding: 0; }
+.doc-sum .row { padding: 3px 0; }
+@media print { .doc-page .screen-doc .pp-page { zoom: 1 !important; } }
+.screen-doc .pp-page { pointer-events: none; }

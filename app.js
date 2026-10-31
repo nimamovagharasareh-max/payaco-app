@@ -2098,7 +2098,7 @@
     const lines = String(body || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const nArt = lines.filter((l) => l.startsWith("# ")).length, nNote = lines.filter((l) => /^تبصره/.test(l)).length;
     const vals = { ...v, "تعداد_مواد_و_تبصره‌ها": `${numWords(nArt)} ماده${nNote ? ` و ${numWords(nNote)} تبصره` : ""}` };
-    const fill = (s) => esc(s).replace(/\{([^{}\s]+)\}/g, (m, k) => (k in vals && vals[k] !== null && vals[k] !== undefined && vals[k] !== "" ? `<span class="pp-fill">${vals[k]}</span>` : `<span class="pp-miss">${esc(m)}</span>`));
+    const fill = (s) => esc(s).replace(/\{([^{}\s]+)\}/g, (m, k) => (k in vals && vals[k] !== null && vals[k] !== undefined && vals[k] !== "" ? `<span class="pp-fill">${vals[k]}</span>` : `<span class="pp-miss" title="${esc(k)}">……………</span>`));
     const blocks = []; let head = "";
     for (const l of lines) {
       if (l.startsWith("# ")) { head = `<h4>${fill(l.slice(2))}</h4>`; continue; }
@@ -2115,7 +2115,7 @@
   async function contractPrintData(id, templateId) {
     const [[c], [k], company] = await Promise.all([
       api(`v_contract_overview?id=eq.${id}&select=*`),
-      api(`contracts?id=eq.${id}&select=doc_number,doc_issued_at,doc_template_id,customers(name,national_id,mobile,address),buildings(name,address)`),
+      api(`contracts?id=eq.${id}&select=doc_number,doc_issued_at,doc_template_id,legacy,customers(name,national_id,mobile,address),buildings(name,address)`),
       rpc("get_company_profile")]);
     const elev = await api(`elevators?contract_id=eq.${id}&is_active=eq.true&select=elevator_no,subscription_code,stops,capacity_persons,usage_type,traffic,motor_type,cabin_door_type,landing_door_type,controller_brand&order=elevator_no`);
     const tid = templateId || k.doc_template_id;
@@ -2135,7 +2135,7 @@
       "تعداد_دستگاه": `${numWords(elev.length || 1)} دستگاه`, "مدت": `${fa(months)} ماه`, "تاریخ_شروع": jdate(c.start_date), "تاریخ_پایان": jdate(c.end_date),
       "مبلغ_خالص_سالانه": rialText(yearNet), "مبلغ_ماهانه": rialText(monthly), "سقف_قطعات": cap ? rialText(cap) : "", "کسر_عدم_سرویس": rialText(c.missed_service_deduction_rial || 0),
       "شماره_کارت": company.card_no ? `<bdi dir="ltr">${esc(groupCard(company.card_no))}</bdi>` : "", "بانک": esc(company.bank || ""), "صاحب_حساب": esc(company.account_holder || ""), "سال_همکاری": c.cooperation_year ? fa(c.cooperation_year) : "" };
-    const row = (label, f) => `<tr><td class="k">${label}</td>${elev.map((e) => `<td>${esc(fa(f(e) || "—"))}</td>`).join("")}</tr>`;
+    const row = (label, f) => `<tr><td class="k">${label}</td>${elev.map((e) => `<td>${f(e) ? esc(fa(f(e))) : `<span class="pp-miss">……………</span>`}</td>`).join("")}</tr>`;
     const tables = {
       "[[جدول_مشخصات]]": `<table class="pp-spec"><thead><tr><th></th>${elev.map((e) => `<th>دستگاه ${fa(e.elevator_no)}${e.subscription_code ? ` · کد ${esc(fa(e.subscription_code))}` : ""}</th>`).join("")}</tr></thead><tbody>
         ${row("نوع کاربری", (e) => e.usage_type)}${row("میزان ترافیک", (e) => e.traffic)}${row("تعداد توقف", (e) => (e.stops ? `${e.stops} توقف` : ""))}${row("ظرفیت", (e) => (e.capacity_persons ? `${e.capacity_persons} نفره` : ""))}
@@ -2153,8 +2153,10 @@
     const d = await contractPrintData(id);
     if (!d.t) return toast("متن قرارداد تعریف نشده است");
     const draft = !d.k.doc_number;
+    const miss = draft && !d.k.legacy ? await rpc("contract_missing_fields", { p_contract_id: id }).catch(() => []) : [];
     const ui = openPrint(`قرارداد ${fa(d.c.contract_code)}${draft ? " — پیش‌نویس" : ""}`, (host) => renderContract(host, d),
-      draft && can.changeContract() ? `<button class="btn ok small" data-pp="issue">صدور و گرفتن شماره</button>` : "");
+      draft && can.changeContract() ? (miss && miss.length ? `<span class="small debt">برای صدور کامل کنید: ${miss.map(esc).join("، ")}</span>`
+        : `<button class="btn ok small" data-pp="issue">صدور و گرفتن شماره</button>${d.k.legacy ? `<span class="small muted">قرارداد موجود از قبل: جاهای خالی با نقطه‌چین چاپ می‌شوند.</span>` : ""}`) : "");
     const issue = ui.wrap.querySelector('[data-pp="issue"]');
     if (issue) issue.addEventListener("click", () => {
       if (!confirm("قرارداد صادر شود؟ شماره‌ی قرارداد (کد ۰۲) گرفته می‌شود و دیگر عوض نمی‌شود. چاپ‌های بعدی همین شماره را دارند.")) return;

@@ -469,7 +469,8 @@ body.pp-open #app, body.pp-open #toast:not(.show) { display: none; }
 .pp-body .pp-a p { margin: 0 0 .3mm; } .pp-body .pp-a ul { margin: 0; padding-right: 4mm; } .pp-body .pp-a li { margin: 0; }
 .pp-body .tb { color: #3d4652; } .pp-body .tb b { color: var(--ink); }
 .pp-fill { font-weight: 800; color: #12351a; background: linear-gradient(transparent 62%, #fff0c2 62%); padding: 0 .6mm; }
-.pp-miss { color: #c0392b; font-weight: 800; }
+.pp-miss { color: #9aa2ad; letter-spacing: 1px; }
+.pp-page:has(.pp-draft) .pp-miss { color: #c0392b; }
 .pp-body table { width: 100%; border-collapse: collapse; }
 .pp-spec td, .pp-spec th { border: .25mm solid var(--ln); padding: .35mm 1.6mm; font-size: 8.2pt; text-align: right; }
 .pp-spec th { background: var(--g2); color: #1d5a28; font-weight: 700; }

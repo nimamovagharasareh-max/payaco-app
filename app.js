@@ -284,7 +284,8 @@
     building: '<path d="M5 21V4h10v17"/><path d="M15 9h4v12"/><path d="M8 8h1M11 8h1M8 12h1M11 12h1M8 16h1M11 16h1"/><path d="M3 21h18"/>',
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     wallet: '<path d="M4 7h15a1 1 0 0 1 1 1v11H4a1 1 0 0 1-1-1V6a2 2 0 0 1 2-2h12v3"/><path d="M16 13h.01"/>',
-    up: '<path d="M12 4l7 9H5z"/>'
+    up: '<path d="M12 4l7 9H5z"/>',
+    refresh: '<path d="M20 11a8 8 0 0 0-14.5-4.6L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.5 4.6L20 16"/><path d="M20 21v-5h-5"/>'
   };
   const icon = (k) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ""}</svg>`;
   function tabsFor() {
@@ -295,8 +296,9 @@
   function shell(title, current, body) {
     const p = state.profile;
     return `<header class="topbar"><div class="brand"><img src="icons/mark.png" alt="پایاکو" class="logo"><div><h1>${esc(title)}</h1>
-      <div class="who">${esc(p.full_name || displayLogin())} · ${esc(ROLE[p.role] || p.role)}</div></div></div></header>
-      <main id="view">${body}</main>
+      <div class="who">${esc(p.full_name || displayLogin())} · ${esc(ROLE[p.role] || p.role)}</div></div></div>
+      <button class="refresh-btn" data-act="refresh" aria-label="به‌روزرسانی">${icon("refresh")}</button></header>
+      <main id="view">${body}${current === "more" && !/data-act="logout"/.test(body) || current !== "more" ? `<footer class="page-credit">${NIMA_CREDIT}</footer>` : ""}</main>
       <nav class="tabbar"><div class="side-brand"><img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی"></div>
         ${tabsFor().map(([k, ico, label]) => `<a href="#/${k}" class="${current === k ? "on" : ""}"><span class="ico">${icon(ico)}${state.badges && state.badges[k] ? `<b class="tab-badge">${fa(state.badges[k])}</b>` : ""}</span>${label}</a>`).join("")}
         <div class="side-foot">${esc(p.full_name || "")}<br><span>${esc(ROLE[p.role] || p.role)}</span></div></nav>`;
@@ -304,7 +306,7 @@
 
   /* ------------------------------------------------------------------ views */
   // designer credit shown on the login screen and the settings page
-  const NIMA_CREDIT = `<div class="nima-credit"><picture><source srcset="icons/nima-mark-dark.png" media="(prefers-color-scheme: dark)"><img src="icons/nima-mark.png" alt="" width="21" height="16"></picture><span>طراحی و توسعه: <bdi class="nima-name">NiMa</bdi></span></div>`;
+  const NIMA_CREDIT = `<${CFG.nimaUrl ? `a href="${CFG.nimaUrl}" target="_blank" rel="noopener"` : "div"} class="nima-credit"><picture><source srcset="icons/nima-mark-dark.png" media="(prefers-color-scheme: dark)"><img src="icons/nima-mark.png" alt="" width="21" height="16"></picture><span>طراحی و توسعه: <bdi class="nima-name">NiMa</bdi></span></${CFG.nimaUrl ? "a" : "div"}>`;
   function viewLogin(error) {
     $app.innerHTML = `<div class="login-wrap"><form class="login-card" id="login">
       <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="login-logo"><p class="muted small">سامانه‌ی جامع اتوماسیون اداری پایاکو</p>
@@ -329,7 +331,7 @@
 
   async function viewDashboard() {
     const d = await rpc("get_dashboard");
-    const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
+    const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
     const stats = [];
     // every tile opens the page behind its number (D-66)
     const go = (href, ff, sf) => ` tap" data-act="go" data-href="${href}"${ff ? ` data-ff="${ff}"` : ""}${sf ? ` data-sf="${sf}"` : ""}`;
@@ -384,6 +386,7 @@
     const quick = [];
     if (can.reportFault()) quick.push(`<button class="btn" data-act="new-fault">+ ثبت خرابی</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="new-service">+ ثبت گزارش سرویس</button>`);
+    if (can.changeContract()) quick.push(`<button class="btn secondary" data-act="new-contract">+ قرارداد جدید</button>`);
     const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
     const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
@@ -391,6 +394,7 @@
       <div class="hero"><div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
       ${closeNote}<div class="stats">${stats.join("")}</div>
       <div class="actions">${quick.join("")}</div>
+      ${isStaff() ? `<div class="row" style="margin-top:10px"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
       <div class="section-title"><h2>خرابی‌های باز</h2><a href="#/faults" class="small">همه</a></div>
       ${urgent.length ? urgent.map(faultCard).join("") : `<div class="card empty">خرابی بازی وجود ندارد</div>`}`);
   }
@@ -400,13 +404,13 @@
       <div class="item-head"><div><div class="item-title">${esc(f.buildings ? f.buildings.name : "")}</div>
       <div class="small muted">${txt(f.fault_description || "")}</div></div>
       <div style="text-align:left">${badge(PRIORITY, f.priority)}<div style="height:4px"></div>${badge(FAULT_STATUS, f.status)}</div></div>
-      <div class="small muted">${f.fault_number ? "شماره " + esc(fa(f.fault_number)) + " · " : ""}${jtime(f.reported_at)}</div></div>`;
+      <div class="small muted">${f.subscription_code ? "کد " + esc(fa(f.subscription_code)) + " · " : ""}${f.fault_number ? "شماره " + esc(fa(f.fault_number)) + " · " : ""}${jtime(f.reported_at)}</div></div>`;
   }
 
   let faultFilter = "open";
   async function viewFaults() {
     const filters = { open: "&status=in.(reported,assigned,in_progress)", emergency: "&priority=eq.emergency&status=in.(reported,assigned,in_progress)", all: "" };
-    const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,buildings(name)&order=reported_at.desc&limit=100${filters[faultFilter]}`);
+    const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,buildings(name)&order=reported_at.desc&limit=100${filters[faultFilter]}`);
     const chips = [["open", "باز"], ["emergency", "اضطراری"], ["all", "همه"]];
     return shell(role() === "TECHNICIAN" ? "کارهای من" : "خرابی‌ها", "faults", `
       <div class="row">${can.reportFault() ? `<button class="btn" data-act="new-fault">+ ثبت خرابی</button>` : ""}</div>
@@ -2209,6 +2213,24 @@
     return state.profile;
   }
 
+  // D-80: every list page can be searched by code or building name (client-side, on what is already loaded)
+  const SEARCH_PAGES = ["faults", "services", "plan", "debts", "renewals", "opening", "requests", "claims", "team", "locations"];
+  const listQuery = {};
+  function injectListSearch(pg) {
+    const v = document.getElementById("view"); if (!v) return;
+    const cards = () => [...v.querySelectorAll(".card")].filter((c) => !c.querySelector("input, select, textarea, .stats") && !c.closest(".pp-wrap") && !c.classList.contains("empty"));
+    if (cards().length < 2) return;
+    const box = document.createElement("div"); box.className = "row lsearch";
+    box.innerHTML = `<input type="search" id="lsearch" placeholder="جست‌وجو: کد یا نام ساختمان" style="flex:1"><button class="btn secondary small" data-act="lsearch-clear">پاک کن</button>`;
+    const anchor = v.querySelector(".chips") || v.querySelector(".row") || v.querySelector('[data-act="back"]');
+    if (anchor) anchor.after(box); else v.prepend(box);
+    const inp = box.querySelector("input");
+    const apply = () => {
+      const q = toEn(inp.value).trim(); listQuery[pg] = inp.value;
+      cards().forEach((c) => { c.style.display = !q || toEn(c.textContent).includes(q) ? "" : "none"; });
+    };
+    inp.value = listQuery[pg] || ""; inp.addEventListener("input", apply); apply();
+  }
   const navStack = []; // in-app history, so «بازگشت» returns to the page the user came from
   async function route() {
     const pm = location.hash.match(/^#\/p\/([0-9a-fA-F-]{36})$/);
@@ -2241,7 +2263,7 @@
       } catch (e) { state.badges = null; }
     }
     if (!$app.querySelector("#view")) $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
-    document.body.classList.add("busy");
+    document.body.classList.add("busy"); lastRoute = Date.now();
     try {
       let html;
       switch (page || def) {
@@ -2267,6 +2289,7 @@
         default: html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard();
       }
       $app.innerHTML = html;
+      if (SEARCH_PAGES.includes(page || def)) injectListSearch(page || def);
       const s = document.getElementById("csearch");
       if (s) { s.addEventListener("input", () => { contractSearch = s.value; applyContractSearch(); }); applyContractSearch(); }
     } catch (e) {
@@ -2284,6 +2307,7 @@
     clearSession(); location.hash = "#/"; viewLogin();
   }
 
+  $app.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "dsearch") { e.preventDefault(); document.querySelector('[data-act="dash-search"]').click(); } });
   // global click delegation
   $app.addEventListener("click", (e) => {
     const el = e.target.closest("[data-act]"); if (!el) return;
@@ -2297,6 +2321,9 @@
     if (act === "approve") sheetApprove(id, true);
     if (act === "reject") sheetApprove(id, false);
     if (act === "open-contract") location.hash = `#/contract/${id}`;
+    if (act === "refresh") { listCache = null; state.contracts = null; el.classList.add("spin"); route().finally(() => toast("به‌روز شد")); }
+    if (act === "dash-search") { contractSearch = document.getElementById("dsearch").value.trim(); contractTab = "current"; location.hash = "#/contracts"; }
+    if (act === "lsearch-clear") { const i = document.getElementById("lsearch"); if (i) { i.value = ""; i.dispatchEvent(new Event("input")); } }
     if (act === "go") { if (el.dataset.ff) faultFilter = el.dataset.ff; if (el.dataset.sf) serviceFilter = el.dataset.sf; const h = el.dataset.href.split("?"); if (h[1]) debtTab = h[1]; location.hash = h[0]; }
     if (act === "users-fold") usersOpen = !el.parentElement.open;
     if (act === "print-contract") printContract(id).catch((er) => toast(er.message));
@@ -2446,6 +2473,11 @@
     }
   });
 
+  // returning to the app after a while shows fresh data (someone else may have recorded a fault meanwhile)
+  let lastRoute = Date.now();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && session && Date.now() - lastRoute > 60000 && !document.querySelector(".sheet-backdrop, .pp-wrap")) { listCache = null; route(); }
+  });
   window.addEventListener("hashchange", () => { document.querySelectorAll(".sheet-backdrop").forEach((b) => b.remove()); route(); });
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
   route();

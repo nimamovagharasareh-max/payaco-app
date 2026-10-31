@@ -493,3 +493,13 @@ body.pp-open #app, body.pp-open #toast:not(.show) { display: none; }
   .pp-page { zoom: 1 !important; margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
   .pp-page:last-child { break-after: auto; page-break-after: auto; }
 }
+
+/* v2.26: refresh button, page credit, list search */
+.topbar { position: relative; }
+.refresh-btn { position: absolute; left: 12px; bottom: 10px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--text); display: grid; place-items: center; cursor: pointer; }
+.refresh-btn.spin svg { animation: pspin .8s linear infinite; }
+@keyframes pspin { to { transform: rotate(360deg); } }
+.page-credit { margin: 24px 0 8px; }
+a.nima-credit { text-decoration: none; }
+.lsearch { margin: 8px 0 10px; }
+@media print { .refresh-btn, .page-credit { display: none !important; } }

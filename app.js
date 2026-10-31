@@ -377,6 +377,17 @@
           <div class="small muted">${[r.overdue.length ? `${fa(r.overdue.length)} تمام‌شده و تمدیدنشده` : "", r.thisMonth.length ? `${fa(r.thisMonth.length)} پایان در همین ماه` : "", r.nextMonth.length ? `${fa(r.nextMonth.length)} پایان در ${MONTHS[r.nextJm - 1]}` : ""].filter(Boolean).join(" · ")}</div></div>`;
       } catch (e) { /* reminder only */ }
     }
+    if (can.changeContract()) {
+      try { // D-91: issued contract documents whose paper signature cycle is not finished
+        const sg = await api("contracts?doc_number=not.is.null&sign_returned_at=is.null&status=in.(active,draft)&select=id,contract_code,sign_ceo_at,sign_sent_at,buildings(name)&order=doc_issued_at.asc&limit=50");
+        if (sg.length) {
+          const stage = (x) => !x.sign_ceo_at ? "منتظر امضای مدیرعامل" : !x.sign_sent_at ? "منتظر ارسال برای مشترک" : `منتظر عودت (${fa(Math.max(0, Math.round((new Date(todayTehran()) - new Date(x.sign_sent_at)) / 86400000)))} روز)`;
+          closeNote += `<div class="card" style="border-color:var(--warn)"><div class="item-title">قرارداد در چرخه‌ی امضا (${fa(sg.length)})</div>
+            ${sg.slice(0, 6).map((x) => `<div class="small tap" data-act="go" data-href="#/contract/${x.id}" style="padding:4px 0">${esc(x.buildings ? x.buildings.name : "")} · قرارداد ${esc(fa(x.contract_code))} · ${stage(x)}</div>`).join("")}
+            ${sg.length > 6 ? `<div class="small muted">و ${fa(sg.length - 6)} مورد دیگر</div>` : ""}</div>`;
+        }
+      } catch (e) { /* reminder only */ }
+    }
     if (isStaff()) {
       try { // D-90: insurance policies ending within 30 days or expired in the last 90 days
         const ir = await rpc("insurance_reminders");
@@ -559,7 +570,7 @@
       api(`v_contract_overview?id=eq.${id}&select=*`),
       api(`invoices?contract_id=eq.${id}&select=id,document_type,document_number,issue_date,total_rial,status,opening_balance_rial,invoice_items(description,amount_rial,debit_credit)&order=issue_date.desc,id.desc`),
       api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`),
-      api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason,doc_number`),
+      api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason,doc_number,doc_issued_at,sign_ceo_at,sign_sent_at,sign_sent_note,sign_returned_at,sign_returned_doc_id`),
       isStaff() ? api(`contract_change_requests?contract_id=eq.${id}&select=id,kind,payload,status,document_number,requested_at,decided_at,decision_note&order=id.desc`) : Promise.resolve([]),
       api(`contract_terms?contract_id=eq.${id}&select=effective_ym,monthly_amount_rial,missed_service_deduction_rial,services_per_month,source&order=effective_ym`),
       api(`documents?contract_id=eq.${id}&storage_path=not.is.null&select=id,document_type,file_name,storage_path,uploaded_at,notes,change_request_id&order=uploaded_at.desc`)]);
@@ -590,6 +601,7 @@
     if (role() === "CEO" && ["active", "draft"].includes(c.status)) actions.push(`<button class="btn danger" data-act="terminate" data-id="${id}">فسخ قرارداد</button>`);
     const missing = isStaff() ? await rpc("contract_missing_fields", { p_contract_id: id }).catch(() => []) : [];
     const insHtml = isStaff() ? await insuranceSection(id).catch(() => "") : "";
+    const signHtml = isStaff() && hold && hold.doc_number ? signatureCard(id, hold, files) : "";
     const draftCard = c.status === "draft" ? `<div class="card" style="border-color:var(--warn)"><div class="item-title">قرارداد جدید منتظر تأیید مدیرعامل</div>
       <div class="small muted">تا تأیید نشود سرویس و صورتحساب نمی‌گیرد.</div>
       ${role() === "CEO" ? `<div class="actions"><button class="btn ok small" data-act="approve-contract" data-id="${id}">تأیید قرارداد</button><button class="btn danger small" data-act="reject-contract" data-id="${id}">رد</button></div>` : ""}</div>` : "";
@@ -617,7 +629,7 @@
         ${c.terminated_at ? `<dt>فسخ</dt><dd class="debt">${jdate(c.terminated_at)}${c.termination_reason ? " · " + esc(c.termination_reason) : ""}</dd>` : ""}</dl>
         <div class="actions">${actions.join("")}</div></div>
 
-      ${insHtml}
+      ${signHtml}${insHtml}
       <div class="section-title"><h2>فایل‌های قرارداد</h2>${isStaff() ? `<button class="btn small secondary" data-act="attach" data-id="${id}">+ پیوست</button>` : ""}</div>
       ${files.length ? `<div class="card">${files.map((f) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><div class="spacer"><div>${esc(FILE_TYPE[f.document_type] || f.document_type)}${f.change_request_id && changes.find((k) => k.id === f.change_request_id && k.document_number) ? ` <bdi dir="ltr">${esc(fa(changes.find((k) => k.id === f.change_request_id).document_number))}</bdi>` : ""}</div>
         <div class="small muted">${esc(f.file_name)} · ${jtime(f.uploaded_at)}${f.notes ? " · " + esc(f.notes) : ""}</div></div>
@@ -920,6 +932,41 @@
     const rem = await rpc("get_invoice_document", { p_invoice_id: invId }).then((d) => Number(d.remaining) || 0).catch(() => 0);
     return sheetPayment(i.contract_id, invId, rem);
   }
+  /* item 15 (D-91): paper signature cycle of an issued contract — the system only records the steps */
+  function signatureCard(id, h, files) {
+    const step = (done, label, when, btn) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><div class="spacer"><div>${done ? "✅" : "⬜️"} ${label}</div>${when ? `<div class="small muted">${when}</div>` : ""}</div>${btn || ""}</div>`;
+    const ch = can.changeContract(), signed = files.find((f) => f.id === h.sign_returned_doc_id);
+    const s1 = step(!!h.sign_ceo_at, "امضای مدیرعامل", h.sign_ceo_at ? jtime(h.sign_ceo_at) : "",
+      !h.sign_ceo_at && role() === "CEO" ? `<button class="btn ok small" data-act="sign-step" data-step="ceo" data-id="${id}">امضا کردم</button>` : "");
+    const s2 = step(!!h.sign_sent_at, "ارسال برای مشترک", h.sign_sent_at ? jdate(h.sign_sent_at) + (h.sign_sent_note ? " · " + esc(h.sign_sent_note) : "") : "",
+      h.sign_ceo_at && !h.sign_sent_at && ch ? `<button class="btn ok small" data-act="sign-step" data-step="sent" data-id="${id}">ثبت ارسال</button>` : "");
+    const waited = h.sign_sent_at && !h.sign_returned_at ? Math.round((new Date(todayTehran()) - new Date(h.sign_sent_at)) / 86400000) : 0;
+    const s3 = step(!!h.sign_returned_at, "امضای مشترک و عودت", h.sign_returned_at ? jdate(h.sign_returned_at) + (signed ? ` · <a href="#" data-act="open-file" data-path="${esc(signed.storage_path)}">نسخه‌ی امضاشده</a>` : "") : waited > 0 ? `${fa(waited)} روز از ارسال گذشته` : "",
+      h.sign_sent_at && !h.sign_returned_at && ch ? `<button class="btn ok small" data-act="sign-step" data-step="returned" data-id="${id}">ثبت عودت</button>` : "");
+    const undo = role() === "CEO" && (h.sign_ceo_at || h.sign_sent_at || h.sign_returned_at) ? `<div class="actions"><button class="btn secondary small" data-act="sign-step" data-step="undo" data-id="${id}">برگرداندن آخرین مرحله</button></div>` : "";
+    const stateBadge = h.sign_returned_at ? `<span class="badge ok">کامل</span>` : `<span class="badge warn">در جریان</span>`;
+    return `<div class="section-title"><h2>امضای قرارداد</h2></div><div class="card"><div class="item-head"><div class="small muted">فایل قرارداد <bdi dir="ltr">${esc(fa(h.doc_number))}</bdi>${h.doc_issued_at ? " · صادر " + jdate(h.doc_issued_at) : ""} · امضا روی نسخه‌ی کاغذی</div>${stateBadge}</div>${s1}${s2}${s3}${undo}</div>`;
+  }
+  async function signStep(id, stepName) {
+    if (stepName === "ceo") { if (!confirm("امضای شما روی نسخه‌ی کاغذی ثبت شود؟")) return; await rpc("record_contract_signature", { p_contract_id: id, p_step: "ceo" }); toast("امضای مدیرعامل ثبت شد"); return route(); }
+    if (stepName === "undo") { if (!confirm("آخرین مرحله‌ی امضا برگردانده شود؟")) return; await rpc("record_contract_signature", { p_contract_id: id, p_step: "undo" }); toast("برگردانده شد"); return route(); }
+    const docs = stepName === "returned" ? await api(`documents?contract_id=eq.${id}&storage_path=not.is.null&select=id,document_type,file_name,uploaded_at&order=uploaded_at.desc`) : [];
+    sheet(`<h3>${stepName === "sent" ? "ثبت ارسال قرارداد برای مشترک" : "ثبت عودت قرارداد امضاشده"}</h3>
+      <label>تاریخ</label>${datePickerHtml("sgd", todayTehran())}
+      ${stepName === "sent" ? `<label>روش یا توضیح (اختیاری)</label><input type="text" data-field="note" placeholder="مثلاً تحویل به مدیر ساختمان، پیک، پست">`
+        : `<label>نسخه‌ی اسکن‌شده (اختیاری)</label><select data-field="doc"><option value="">— بدون فایل —</option>${docs.map((f) => `<option value="${f.id}" ${f.document_type === "contract" ? "selected" : ""}>${esc(FILE_TYPE[f.document_type] || f.document_type)} · ${esc(f.file_name || "")} · ${jdate(f.uploaded_at)}</option>`).join("")}</select>
+          <div class="hint">اگر اسکن را هنوز بارگذاری نکرده‌اید، اول از «فایل‌های قرارداد ← + پیوست» با نوع «قرارداد امضاشده» بارگذاری کنید.</div>`}
+      <div class="actions"><button class="btn ok" data-act="save">ثبت</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const docSel = el.querySelector('[data-field="doc"]'), note = el.querySelector('[data-field="note"]');
+        await rpc("record_contract_signature", { p_contract_id: id, p_step: stepName, p_date: readDate(el, "sgd"),
+          p_note: note ? note.value.trim() || null : null, p_doc_id: docSel && docSel.value ? Number(docSel.value) : null });
+        close(); toast(stepName === "sent" ? "ارسال ثبت شد" : "عودت قرارداد ثبت شد"); route();
+      }));
+    });
+  }
+
   /* item 13 (D-90): insurance policy per elevator; history follows the subscription code across renewals */
   async function insuranceSection(contractId) {
     const elev = await api(`elevators?contract_id=eq.${contractId}&is_active=eq.true&select=id,elevator_no,subscription_code&order=elevator_no`);
@@ -2833,6 +2880,7 @@
       route();
     }
     if (act === "report-csv") reportCsv();
+    if (act === "sign-step") signStep(Number(el.dataset.id), el.dataset.step).catch((er) => toast(er.message));
     if (act === "ins-new") sheetInsurance({ elevatorId: Number(el.dataset.e), contractId: Number(el.dataset.c), fromId: el.dataset.last ? Number(el.dataset.last) : null }).catch((er) => toast(er.message));
     if (act === "ins-edit") sheetInsurance({ id: Number(el.dataset.id), contractId: Number(el.dataset.c) }).catch((er) => toast(er.message));
     if (act === "contract-report") sheetContractReport(id).catch((er) => toast(er.message));

@@ -1452,13 +1452,15 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
   const jdLatin = (d) => toEn(jdate(d));
+  const durFa = (m) => { m = Math.round(Number(m)); if (m < 60) return fa(m) + " دقیقه"; const h = Math.floor(m / 60), r = m % 60;
+    if (h < 24) return fa(h) + " ساعت" + (r ? " و " + fa(r) + " دقیقه" : ""); const d = Math.floor(h / 24), hh = h % 24; return fa(d) + " روز" + (hh ? " و " + fa(hh) + " ساعت" : ""); };
   let reportTab = "balance";
   const reportRange = { from: null, to: null };
   let reportData = null;
   async function viewReports() {
     const t = toEn(todayTehran()).split("-").map(Number), tj = g2j(t[0], t[1], t[2]);
     if (!reportRange.from) { const g = j2g(tj.jy, tj.jm, 1); reportRange.from = `${g.gy}-${pad(g.gm)}-${pad(g.gd)}`; reportRange.to = todayTehran(); }
-    const tabs = [["balance", "تراز"], ["debtors", "بدهکاران"], ["receipts", "دریافت‌ها"]];
+    const tabs = [["balance", "تراز"], ["contracts", "تفکیکی"], ["ops", "گردش کار"], ["debtors", "بدهکاران"], ["receipts", "دریافت‌ها"]];
     let body = "";
     if (reportTab === "balance") {
       const b = await rpc("report_balance", { p_from: reportRange.from, p_to: reportRange.to }); reportData = b;
@@ -1488,6 +1490,49 @@
         <div class="hint">مانده تا ${jdate(reportRange.to)}</div>
         ${debt.map(card).join("") || `<div class="card empty">بدهکاری نیست</div>`}
         ${cred.length ? `<div class="section-title"><h2>بستانکاران</h2></div>${cred.map(card).join("")}` : ""}`;
+    } else if (reportTab === "contracts") {
+      const list = await rpc("report_by_contract", { p_from: reportRange.from, p_to: reportRange.to }); reportData = list;
+      const S = (k) => list.reduce((a, x) => a + Number(x[k] || 0), 0);
+      body = `<div class="stats"><div class="stat"><div class="label">قرارداد</div><div class="value">${fa(list.length)}</div></div>
+          <div class="stat"><div class="label">صورتحساب و فاکتور</div><div class="value" style="font-size:15px">${num(tom(S("statements") + S("repairs") + S("other_net")))}</div></div>
+          <div class="stat"><div class="label">دریافت</div><div class="value" style="font-size:15px">${num(tom(S("received")))}</div></div>
+          <div class="stat danger"><div class="label">مانده پایان دوره</div><div class="value" style="font-size:15px">${num(tom(S("closing")))}</div></div></div>
+        <div class="hint">مبالغ به تومان. «اسناد دیگر» = افتتاحیه و سایر اسناد پس از کسر افتتاحیه‌ی بستانکار.</div>
+        ${list.map((x) => `<div class="card tap" data-act="open-contract" data-id="${x.contract_id}"><div class="item-head"><div><div class="item-title">${esc(x.building_name || "")}</div>
+          <div class="small muted">قرارداد ${esc(fa(x.contract_code))}${x.subscription_code ? " · اشتراک " + esc(fa(x.subscription_code)) : ""}${x.status !== "active" ? " · " + esc((CONTRACT_STATUS[x.status] || [x.status])[0]) : ""}</div></div>
+          <div style="text-align:left">${money(Math.abs(x.closing), { cls: x.closing > 0 ? "debt" : x.closing < 0 ? "credit" : "" })}</div></div>
+          <div class="small" style="margin-top:4px">ابتدای دوره ${num(tom(x.opening))} · سرویس ${num(tom(x.statements))}${Number(x.repairs) ? " · تعمیر " + num(tom(x.repairs)) : ""}${Number(x.other_net) ? " · اسناد دیگر " + num(tom(x.other_net)) : ""} · دریافت ${num(tom(x.received))}${Number(x.cancelled) ? " · ابطال " + num(tom(x.cancelled)) : ""}${Number(x.transfer_net) ? " · انتقال " + num(tom(x.transfer_net)) : ""}</div>
+          <div class="small muted">سرویس انجام‌شده ${fa(x.services_done)} · انجام‌نشده ${fa(x.services_missed)} · خرابی ${fa(x.faults)}</div></div>`).join("") || `<div class="card empty">در این بازه چیزی نیست</div>`}`;
+    } else if (reportTab === "ops") {
+      const o = await rpc("report_operations", { p_from: reportRange.from, p_to: reportRange.to }); reportData = o;
+      const sv = o.services.by_status || {}, fl = o.faults, dc = o.docs;
+      const svDone = (sv.confirmed || 0) + (sv.completed || 0);
+      const line = (label, v) => `<tr><td>${label}</td><td style="text-align:left">${v}</td></tr>`;
+      body = `<div class="section-title"><h2>سرویس دوره‌ای</h2></div>
+        <div class="card"><table class="list"><tbody>
+          ${line("قرارداد فعال در بازه", fa(o.services.active_contracts))}
+          ${line("ارجاع برنامه‌ریزی‌شده", fa(o.services.planned))}
+          ${line("انجام و تأییدشده", fa(svDone))}
+          ${line("منتظر تأیید", fa(sv.pending_confirmation || 0))}
+          ${line("انجام‌نشده", fa(sv.missed || 0))}
+          ${sv.rejected ? line("ردشده", fa(sv.rejected)) : ""}</tbody></table></div>
+        <div class="section-title"><h2>خرابی و تعمیر</h2></div>
+        <div class="card"><table class="list"><tbody>
+          ${line("خرابی ثبت‌شده", fa(fl.count))}
+          ${Object.entries(fl.by_priority || {}).map(([k, v]) => line("— " + ((PRIORITY[k] || [k])[0]), fa(v))).join("")}
+          ${line("رفع‌شده یا بسته", fa((fl.by_status.repaired || 0) + (fl.by_status.closed || 0)))}
+          ${line("میانگین اعلام تا ارجاع به تکنسین", fl.avg_notify_min == null ? "—" : durFa(fl.avg_notify_min))}
+          ${line("میانگین اعلام تا رفع", fl.avg_repair_min == null ? "—" : durFa(fl.avg_repair_min))}
+          ${line("خرابی باز (همین حالا)", fa(fl.open_now))}</tbody></table></div>
+        <div class="section-title"><h2>اسناد و دریافت</h2></div>
+        <div class="card"><table class="list"><tbody>
+          ${line("پیش‌فاکتور صادرشده", fa(dc.proformas) + " · تأییدشده " + fa(dc.proformas_approved) + " · " + num(tom(dc.proformas_total)))}
+          ${line("فاکتور تعمیر", fa(dc.repair_invoices) + " · " + num(tom(dc.repair_total)))}
+          ${line("صورتحساب سرویس", fa(dc.statements) + " · " + num(tom(dc.statements_total)))}
+          ${line("دریافت وجه", num(tom(dc.received)))}</tbody></table><div class="hint">مبالغ به تومان</div></div>
+        ${o.technicians.length ? `<div class="section-title"><h2>عملکرد سرویس‌کارها</h2></div><div class="card"><table class="list"><tbody>
+          ${o.technicians.map((t) => line(esc(t.name), "سرویس " + fa(t.services) + " · خرابی " + fa(t.faults) + " · رفع " + fa(t.repaired))).join("")}</tbody></table></div>` : ""}
+        <div class="hint">خروجی اکسل این بخش، فهرست کامل خرابی‌ها با زمان اعلام، ارجاع و رفع است.</div>`;
     } else {
       const list = await rpc("report_receipts", { p_from: reportRange.from, p_to: reportRange.to }); reportData = list;
       const total = list.reduce((a, x) => a + Number(x.amount_rial), 0);
@@ -1511,6 +1556,14 @@
         ["فاکتور تعمیر", tom(d.debit_repairs)], ["مانده افتتاحیه بدهکار", tom(d.debit_opening)], ["سایر اسناد", tom(d.debit_other)],
         ["دریافت وجه", tom(d.credit_received)], ["مانده افتتاحیه بستانکار", tom(d.credit_opening)], ["اسناد ابطال‌شده", tom(d.credit_cancelled)],
         ["انتقال مانده (خالص)", tom(d.transfer_net)], ["مانده پایان دوره", tom(d.closing)]]);
+    } else if (reportTab === "contracts") {
+      downloadCsv(`tafkiki-${f}-${t}.csv`, ["کد قرارداد", "کد اشتراک", "ساختمان", "کارفرما", "وضعیت", "مانده ابتدای دوره", "صورتحساب سرویس", "فاکتور تعمیر", "اسناد دیگر", "دریافت", "ابطال", "انتقال مانده", "مانده پایان دوره", "سرویس انجام‌شده", "سرویس انجام‌نشده", "خرابی"],
+        d.map((x) => [x.contract_code, x.subscription_code, x.building_name, x.customer_name, (CONTRACT_STATUS[x.status] || [x.status])[0], tom(x.opening), tom(x.statements), tom(x.repairs), tom(x.other_net), tom(x.received), tom(x.cancelled), tom(x.transfer_net), tom(x.closing), x.services_done, x.services_missed, x.faults]));
+    } else if (reportTab === "ops") {
+      const tm = (v) => v ? toEn(jdate(v)) + " " + new Date(v).toLocaleTimeString("en-GB", { timeZone: "Asia/Tehran", hour: "2-digit", minute: "2-digit" }) : "";
+      const mins = (a, b) => a && b ? Math.round((new Date(b) - new Date(a)) / 60000) : "";
+      downloadCsv(`gardesh-kar-${f}-${t}.csv`, ["شماره خرابی", "ساختمان", "کد قرارداد", "اولویت", "وضعیت", "تکنسین", "زمان اعلام", "زمان ارجاع", "زمان رفع", "اعلام تا ارجاع (دقیقه)", "اعلام تا رفع (دقیقه)", "شرح خرابی", "شرح رفع"],
+        (d.faults.list || []).map((x) => [x.number, x.building, x.contract, (PRIORITY[x.priority] || [x.priority])[0], (FAULT_STATUS[x.status] || [x.status])[0], x.technician, tm(x.reported_at), tm(x.notified_at), tm(x.repaired_at), mins(x.reported_at, x.notified_at), mins(x.reported_at, x.repaired_at), x.description, x.repair]));
     } else if (reportTab === "debtors") {
       downloadCsv(`mande-moshtarekin-${t}.csv`, ["کد قرارداد", "ساختمان", "کارفرما", "مدیر ساختمان", "موبایل", "وضعیت قرارداد", "مانده (تومان)", "بدهکار/بستانکار", "قدیمی‌ترین بدهی باز", "تعداد سند باز"],
         d.map((x) => [x.contract_code, x.building_name, x.customer_name, x.manager_name, x.manager_mobile, x.status, tom(Math.abs(x.balance_rial)), x.balance_rial > 0 ? "بدهکار" : x.balance_rial < 0 ? "بستانکار" : "تسویه", x.oldest_open_date ? jdLatin(x.oldest_open_date) : "", x.open_docs]));

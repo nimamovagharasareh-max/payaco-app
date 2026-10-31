@@ -33,8 +33,8 @@ for q in \
 done
 
 BYTES=$(du -sb "$DIR" | cut -f1)
-# keep 30 days, and the first backup of each month for one year
-find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +30 ! -name '*-01_*' -exec rm -rf {} +
+# keep 7 days, and the first backup of each month for one year (D-79)
+find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +7 ! -name '*-01_*' -exec rm -rf {} +
 find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mtime +366 -exec rm -rf {} +
 "$BIN/psql" -Atqc "select public.record_backup($BYTES, 'ok')" >/dev/null || echo "$(date -Is) warning: could not record the backup time"
 echo "$(date -Is) OK $DIR ($BYTES bytes)"

@@ -6,7 +6,7 @@
 #  - stores the connection in /etc/payaco-backup/ (root only),
 #  - installs /usr/local/bin/payaco-backup and a nightly cron job (00:00 UTC = 03:30 Tehran),
 #  - runs the first backup immediately.
-# Backups: /var/backups/payaco/<date>/ (full dump + readable CSV files). Kept: 30 days + the first of every month for a year.
+# Backups: /var/backups/payaco/<date>/ (full dump + readable CSV files). Kept: 7 days + the first of every month for a year.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "Run as root (sudo)."; exit 1; }
 REF=whwsxctalcukmbawakre

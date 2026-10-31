@@ -1,5 +1,5 @@
 #!/bin/bash
-# Payaco nightly backup (D-79): full dump of the database (schemas public and storage) + readable CSV files.
+# Payaco nightly backup (D-79): full dump of schema public + readable CSV files (incl. the file list of storage).
 # Installed by backup-install.sh as /usr/local/bin/payaco-backup; connection in /etc/payaco-backup/env (root only).
 set -uo pipefail
 set -a; . /etc/payaco-backup/env; set +a
@@ -9,9 +9,13 @@ STAMP=$(TZ=Asia/Tehran date +%Y-%m-%d_%H%M)
 DIR=$ROOT/$STAMP
 umask 077
 mkdir -p "$DIR/csv"
-fail() { echo "$(date -Is) FAILED: $1"; "$BIN/psql" -Atqc "select public.record_backup(0, 'failed: ' || \$\$${1//\$/}\$\$)" >/dev/null 2>&1; exit 1; }
+fail() { local m=${1//\$/}; m=${m//\'/}; echo "$(date -Is) FAILED: $m"; "$BIN/psql" -Atqc "select public.record_backup(0, 'failed: $m')" >/dev/null 2>&1; exit 1; }
 
-"$BIN/pg_dump" -Fc -n public -n storage --no-owner --no-privileges -f "$DIR/payaco.dump" || fail "pg_dump"
+# storage internals are not readable by the backup role; the file list is kept as CSV below
+if ! "$BIN/pg_dump" -Fc -n public --no-owner --no-privileges -f "$DIR/payaco.dump" 2> "$DIR/pg_dump.err"; then
+  fail "pg_dump: $(head -c 150 "$DIR/pg_dump.err" | tr '\n' ' ')"
+fi
+rm -f "$DIR/pg_dump.err"
 "$BIN/pg_restore" -l "$DIR/payaco.dump" > /dev/null || fail "dump unreadable"
 
 # readable copies (open in Excel; UTF-8 with BOM so Persian shows correctly)
@@ -27,7 +31,8 @@ for q in \
   "buildings|select * from public.buildings order by id" \
   "customers|select * from public.customers order by id" \
   "elevators|select * from public.elevators order by contract_id, elevator_no" \
-  "users|select id, full_name, username, role, is_active from public.user_profiles order by full_name"; do
+  "users|select id, full_name, username, role, is_active from public.user_profiles order by full_name" \
+  "storage_files|select bucket_id, name, metadata->>'size' as size, created_at from storage.objects order by bucket_id, name"; do
   name=${q%%|*}; sql=${q#*|}
   { printf '\xEF\xBB\xBF'; "$BIN/psql" -Atqc "copy ($sql) to stdout with (format csv, header)"; } > "$DIR/csv/$name.csv" || fail "csv $name"
 done

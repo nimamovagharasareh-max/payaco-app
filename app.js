@@ -439,7 +439,7 @@
     otherTabKeys = (contractTab === "archive" ? cur : arc).map(key);
     const card = (c) => `<div class="card tap" data-act="open-contract" data-id="${c.id}" data-search="${esc(key(c))}"${q && !key(c).includes(q) ? ` style="display:none"` : ""}>
         <div class="item-head"><div class="with-key"><span class="call-key" title="کد قرارداد">${esc(fa(String(c.contract_code).split(/[-/]/)[0]))}</span><div><div class="item-title">${esc(c.building_name || "")}</div>
-        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div>
+        <div class="small muted">قرارداد ${esc(fa(c.contract_code))} · ${esc(c.customer_name || "")}${c.cooperation_year ? ` · ${fa(c.cooperation_year)} سال همکاری` : ""}${c.status !== "active" ? " " + badge(CONTRACT_STATUS, c.status) : ""}${held.has(c.id) ? ` <span class="badge warn">صورتحساب معلق</span>` : ""}</div>
         ${contractTab === "archive" && c.start_date ? `<div class="small muted">${jdate(c.start_date)} تا ${jdate(c.end_date)}</div>` : ""}</div></div>
         <div style="text-align:left">${money(Math.abs(c.balance_rial), { cls: c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : "" })}${balanceBadge(c.balance_rial)}</div></div></div>`;
     let body;
@@ -452,6 +452,7 @@
       body = [...groups.entries()].map(([y, cs]) => `<div class="cgroup"><div class="section-title"><h2>قراردادهای سال ${y ? fa(y) : "نامشخص"} (${fa(cs.length)})</h2></div>${cs.map(card).join("")}</div>`).join("");
     } else body = shown.map(card).join("");
     return shell(isExternal() ? "صورتحساب‌ها" : "قراردادها", "contracts", `
+      ${can.changeContract() ? `<div class="row"><button class="btn" data-act="new-contract">+ قرارداد جدید</button></div><div style="height:8px"></div>` : ""}
       ${arc.length ? `<div class="chips"><button data-act="contract-tab" data-k="current" class="${contractTab === "current" ? "on" : ""}">جاری (${fa(cur.length)})</button><button data-act="contract-tab" data-k="archive" class="${contractTab === "archive" ? "on" : ""}">بایگانی (${fa(arc.length)})</button></div>` : ""}
       ${list.length > 3 ? `<div class="row"><input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}" style="flex:1"><button class="btn secondary small" data-act="csearch-clear" aria-label="پاک کردن جست‌وجو">پاک کن</button></div><div style="height:10px"></div>` : ""}
       ${body}<div class="card empty" id="cnone" style="display:none">قراردادی با این جست‌وجو پیدا نشد</div>
@@ -471,6 +472,51 @@
       other.style.display = n ? "" : "none";
       other.textContent = n ? `${fa(n)} قرارداد هم در ${contractTab === "archive" ? "قراردادهای جاری" : "بایگانی"} پیدا شد؛ برای دیدن بزنید` : "";
     }
+  }
+
+  async function sheetNewContract() {
+    const ceo = role() === "CEO";
+    const blds = await api("buildings?is_active=eq.true&select=id,name,address&order=name");
+    const f = (k, label, ltr, ph) => `<label>${label}</label><input type="text" data-nc="${k}" ${ltr ? 'class="ltr" inputmode="numeric"' : ""} placeholder="${ph || ""}">`;
+    const elevRow = () => `<div class="card" data-ncelev="1"><label>کد اشتراک دستگاه</label><input type="text" class="ltr" inputmode="numeric" data-ne="subscription_code">
+      <label>تعداد توقف</label><input type="text" class="ltr" inputmode="numeric" data-ne="stops"><label>ظرفیت (نفر)</label><input type="text" class="ltr" inputmode="numeric" data-ne="capacity_persons"></div>`;
+    sheet(`<h3>قرارداد جدید</h3>
+      <div class="hint">${ceo ? "با ذخیره، قرارداد فعال می‌شود. می‌توانید با اطلاعات ناقص هم ثبت کنید و بعد کامل کنید." : "قرارداد پس از تأیید مدیرعامل فعال می‌شود. همه‌ی خانه‌ها لازم است."}</div>
+      <div class="section-title"><h2>ساختمان</h2></div>
+      <label>ساختمان</label><select data-nc="building_id"><option value="">— ساختمان جدید —</option>${blds.map((b) => `<option value="${b.id}">${esc(b.name)}${b.address ? " · " + esc(b.address) : ""}</option>`).join("")}</select>
+      <div data-field="newb">${f("b_name", "نام ساختمان")}${f("b_address", "نشانی")}${f("b_postal", "کد پستی", true)}${f("b_mname", "نام مدیر ساختمان")}${f("b_mmobile", "موبایل مدیر ساختمان", true, "09")}</div>
+      <div class="section-title"><h2>کارفرما</h2></div>${f("cu_name", "نام کارفرما")}${f("cu_nid", "کد/شناسه ملی", true)}${f("cu_mobile", "موبایل", true, "09")}${f("cu_address", "نشانی کارفرما")}
+      <div class="section-title"><h2>قرارداد</h2></div>${f("code", "کد قرارداد", true)}
+      <label>تاریخ شروع</label>${datePickerHtml("ncstart")}<label>تاریخ پایان</label>${datePickerHtml("ncend", addDays(todayTehran(), 364))}
+      ${amountFieldHtml("ncm", "مبلغ ماهانه (بدون ارزش افزوده)")}${amountFieldHtml("ncd", "کسر سرویس انجام‌نشده")}
+      ${f("spm", "تعداد سرویس در ماه", true, "1")}${f("coop", "سال‌های همکاری (تعداد سال)", true, "1")}
+      <div class="section-title"><h2>دستگاه‌ها</h2></div><div data-field="elevs">${elevRow()}</div>
+      <button type="button" class="btn secondary small" data-act="nc-add-elev">+ دستگاه دیگر</button>
+      <div class="actions"><button class="btn" data-act="save">${ceo ? "ثبت قرارداد" : "ارسال برای تأیید"}</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      bindAmount(el, "ncm"); bindAmount(el, "ncd");
+      const v = (k) => toEn((el.querySelector(`[data-nc="${k}"]`) || {}).value || "").trim();
+      const bsel = el.querySelector('[data-nc="building_id"]');
+      bsel.addEventListener("change", () => { el.querySelector('[data-field="newb"]').style.display = bsel.value ? "none" : ""; });
+      el.querySelector('[data-act="nc-add-elev"]').addEventListener("click", () => el.querySelector('[data-field="elevs"]').insertAdjacentHTML("beforeend", elevRow()));
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const raw = (k) => ((el.querySelector(`[data-nc="${k}"]`) || {}).value || "").trim();
+        const elevators = [...el.querySelectorAll("[data-ncelev]")].map((b) => ({ subscription_code: toEn(b.querySelector("[data-ne=subscription_code]").value.trim()),
+          stops: toEn(b.querySelector("[data-ne=stops]").value.trim()), capacity_persons: toEn(b.querySelector("[data-ne=capacity_persons]").value.trim()) }))
+          .filter((x) => x.subscription_code || x.stops || x.capacity_persons);
+        const m = readAmount(el, "ncm"), d = readAmount(el, "ncd");
+        const payload = {
+          building: bsel.value ? { id: Number(bsel.value) } : { name: raw("b_name"), address: raw("b_address"), postal_code: v("b_postal"), manager_name: raw("b_mname"), manager_mobile: v("b_mmobile") },
+          customer: { name: raw("cu_name"), national_id: v("cu_nid"), mobile: v("cu_mobile"), address: raw("cu_address") },
+          contract: { contract_code: v("code"), start_date: readDate(el, "ncstart"), end_date: readDate(el, "ncend"), monthly_amount_rial: m.value ? m.rial : "",
+            missed_service_deduction_rial: d.value ? d.rial : "", services_per_month: v("spm") || "1", cooperation_year: v("coop") || "1" },
+          elevators };
+        if (!payload.contract.contract_code) throw new Error("کد قرارداد را وارد کنید");
+        if (payload.contract.end_date < payload.contract.start_date) throw new Error("تاریخ پایان باید بعد از شروع باشد");
+        const newId = await rpc("create_contract", { p: payload });
+        close(); toast(ceo ? "قرارداد ثبت و فعال شد" : "قرارداد ثبت شد؛ منتظر تأیید مدیرعامل"); location.hash = `#/contract/${newId}`;
+      }));
+    });
   }
 
   async function viewContract(id) {
@@ -502,13 +548,19 @@
       if (c.status === "active") actions.push(`<button class="btn secondary" data-act="amend" data-id="${id}">الحاقیه</button>`);
       if (!next && ["active", "expired"].includes(c.status)) actions.push(`<button class="btn secondary" data-act="renew" data-id="${id}">تمدید قرارداد</button>`);
     }
+    const missing = isStaff() ? await rpc("contract_missing_fields", { p_contract_id: id }).catch(() => []) : [];
+    const draftCard = c.status === "draft" ? `<div class="card" style="border-color:var(--warn)"><div class="item-title">قرارداد جدید منتظر تأیید مدیرعامل</div>
+      <div class="small muted">تا تأیید نشود سرویس و صورتحساب نمی‌گیرد.</div>
+      ${role() === "CEO" ? `<div class="actions"><button class="btn ok small" data-act="approve-contract" data-id="${id}">تأیید قرارداد</button><button class="btn danger small" data-act="reject-contract" data-id="${id}">رد</button></div>` : ""}</div>` : "";
+    const missCard = missing && missing.length && !["expired", "terminated"].includes(c.status) ? `<div class="card" style="border-color:var(--danger)"><div class="item-title">اطلاعات ناقص قرارداد</div>
+      <div class="small">${missing.map(esc).join("، ")}</div><div class="small muted">تا کامل نشود، تمدید توسط کارمند ممکن نیست. از «ویرایش اطلاعات» وارد کنید.</div></div>` : "";
     const locCard = ["BUILDING_MANAGER", "EMPLOYER"].includes(role()) ? `<div class="card"><div class="item-title">موقعیت ساختمان برای مسیریابی سرویس‌کار</div>
       <div class="small muted">داخل یا جلوی ساختمان دکمه را بزنید؛ پس از تأیید مدیر تعمیرات، سرویس‌کارها با یک لمس مسیریابی می‌کنند.</div>
       <div class="actions"><button class="btn secondary small" data-act="send-location" data-bid="${c.building_id}">ارسال موقعیت ساختمان</button></div></div>` : "";
-    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${locCard}
+    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${draftCard}${missCard}${locCard}
       <a href="#/contracts" class="small">→ بازگشت</a>
       <div class="card" style="margin-top:8px"><div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
-        <div class="small muted">${esc(c.building_address || "")}</div></div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
+        <div class="small muted">${esc(c.building_address || "")}</div>${c.cooperation_year ? `<div class="small"><span class="badge info">سال‌های همکاری: ${fa(c.cooperation_year)} سال</span></div>` : ""}</div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
         ${next ? `<div class="small">تمدید شد: <a href="#/contract/${next.id}">قرارداد ${esc(fa(next.contract_code))}</a></div>` : ""}
         ${prev ? `<div class="small muted">دوره قبل: <a href="#/contract/${prev.id}">قرارداد ${esc(fa(prev.contract_code))}</a></div>` : ""}
         ${hold && hold.billing_hold && isStaff() ? `<div class="error-box" style="margin:8px 0">صورتحساب این قرارداد معلق است: ${esc(hold.billing_hold_reason || "")}<div class="small">سرویس‌ها ثبت می‌شوند ولی صورتحساب صادر نمی‌شود؛ با رفع تعلیق، صورتحساب‌های عقب‌افتاده صادر می‌شوند.</div>
@@ -1015,8 +1067,10 @@
     const eg = j2g(sj.jy + 1, sj.jm, 1); // one Jalali year later, minus one day
     const newEnd = new Date(Date.UTC(eg.gy, eg.gm - 1, eg.gd) + (sj.jd - 1) * 86400000 - 86400000);
     const bal = Number(c.balance_rial || 0);
+    const miss = await rpc("contract_missing_fields", { p_contract_id: contractId }).catch(() => []);
     sheet(`<h3>تمدید قرارداد ${esc(fa(c.contract_code))}</h3>
       <div class="small muted">${esc(c.building_name || "")}</div>
+      ${miss && miss.length ? `<div class="error-box" style="margin:8px 0">اطلاعات ناقص: ${miss.map(esc).join("، ")}${role() === "CEO" ? "<div class=\"small\">شما می‌توانید با اطلاعات ناقص تمدید کنید؛ بعد از «ویرایش اطلاعات» کامل کنید.</div>" : "<div class=\"small\">تا این‌ها از «ویرایش اطلاعات» وارد نشود، تمدید ثبت نمی‌شود.</div>"}</div>` : ""}
       <label>شروع دوره جدید</label>${datePickerHtml("start", iso(start))}
       <label>پایان دوره جدید</label>${datePickerHtml("end", iso(newEnd))}
       ${amountFieldHtml("monthly", "مبلغ ماهانه دوره جدید (بدون ارزش افزوده)")}
@@ -1055,7 +1109,7 @@
   /* ------------------------------------------------------------------ contract changes: edit / amendment / renewal (employee asks, CEO approves) */
   const CHANGE_KIND = { edit: "ویرایش اطلاعات", amendment: "الحاقیه", renewal: "تمدید" };
   const CHANGE_STATUS = { pending: ["منتظر تأیید مدیرعامل", "warn"], approved: ["اعمال شد", "ok"], rejected: ["رد شد", "danger"], withdrawn: ["پس گرفته شد", ""] };
-  const FIELD_LABEL = { contract_code: "کد قرارداد", start_date: "تاریخ شروع", end_date: "تاریخ پایان", monthly_amount_rial: "مبلغ ماهانه (ریال)", missed_service_deduction_rial: "کسر سرویس انجام‌نشده (ریال)", services_per_month: "سرویس در ماه", manager_name: "مدیر ساختمان", manager_mobile: "موبایل مدیر", address: "نشانی", name: "نام", mobile: "موبایل", national_id: "کد/شناسه ملی", notes: "توضیحات",
+  const FIELD_LABEL = { postal_code: "کد پستی", cooperation_year: "سال‌های همکاری (تعداد سال)", subscription_code: "کد اشتراک", contract_code: "کد قرارداد", start_date: "تاریخ شروع", end_date: "تاریخ پایان", monthly_amount_rial: "مبلغ ماهانه (ریال)", missed_service_deduction_rial: "کسر سرویس انجام‌نشده (ریال)", services_per_month: "سرویس در ماه", manager_name: "مدیر ساختمان", manager_mobile: "موبایل مدیر", address: "نشانی", name: "نام", mobile: "موبایل", national_id: "کد/شناسه ملی", notes: "توضیحات",
     stops: "توقف", capacity_persons: "ظرفیت", motor_type: "موتور", cabin_door_type: "درب کابین", landing_door_type: "درب طبقات", controller_brand: "تابلو فرمان" };
   const ymText = (ym) => `${MONTHS[ym % 100 - 1]} ${fa(Math.floor(ym / 100))}`;
   function changeSummary(k) {
@@ -1064,6 +1118,7 @@
     if (k.kind === "renewal") return `${jdate(p.start_date)} تا ${jdate(p.end_date)}: ماهانه ${num(Math.round(p.monthly_amount_rial / 10))} تومان، کسر ${num(Math.round(p.missed_service_deduction_rial / 10))} تومان، ${fa(p.services_per_month)} سرویس در ماه`;
     const parts = [];
     ["building", "customer", "contract"].forEach((g) => Object.entries(p[g] || {}).forEach(([f, v]) => parts.push(`${FIELD_LABEL[f] || f}: ${esc(v || "—")}`)));
+    (p.new_elevators || []).forEach((e) => parts.push(`دستگاه جدید: کد اشتراک ${esc(fa(e.subscription_code || "—"))}${e.stops ? "، " + fa(e.stops) + " توقف" : ""}`));
     (p.elevators || []).forEach((e) => Object.entries(e).filter(([f]) => f !== "id" && f !== "no").forEach(([f, v]) => parts.push(`دستگاه ${fa(e.no || "")} ${FIELD_LABEL[f] || f}: ${esc(v || "—")}`)));
     return parts.join("، ");
   }
@@ -1075,13 +1130,13 @@
   }
 
   async function viewRequests() {
-    const list = await api("contract_change_requests?status=eq.pending&select=id,kind,payload,status,document_number,requested_at,decision_note,contract_id,contracts(contract_code,buildings(name))&order=id");
+    const list = await api("contract_change_requests?status=eq.pending&select=id,kind,payload,status,document_number,requested_at,decision_note,contract_id,contracts!contract_change_requests_contract_id_fkey(contract_code,buildings(name))&order=id");
     return shell("درخواست‌های تغییر قرارداد", "more", `<a href="#/more" class="small">→ بازگشت</a><div style="height:8px"></div>
       ${list.length ? list.map((k) => `<div class="small muted" style="margin-top:6px"><a href="#/contract/${k.contract_id}">قرارداد ${esc(fa(k.contracts ? k.contracts.contract_code : ""))} · ${esc(k.contracts && k.contracts.buildings ? k.contracts.buildings.name : "")}</a></div>${changeCard(k)}`).join("") : `<div class="card empty">درخواستی منتظر تأیید نیست</div>`}`);
   }
 
   async function sheetEditContract(contractId) {
-    const [c] = await api(`contracts?id=eq.${contractId}&select=id,contract_code,notes,start_date,end_date,monthly_amount_rial,missed_service_deduction_rial,services_per_month,buildings(name,manager_name,manager_mobile,address),customers(name,mobile,national_id,address)`);
+    const [c] = await api(`contracts?id=eq.${contractId}&select=id,contract_code,notes,cooperation_year,start_date,end_date,monthly_amount_rial,missed_service_deduction_rial,services_per_month,buildings(name,postal_code,manager_name,manager_mobile,address),customers(name,mobile,national_id,address)`);
     const ceo = role() === "CEO";
     const ceoFix = ceo ? `<div class="section-title"><h2>اصلاح قرارداد (فقط مدیرعامل)</h2></div>
       <div class="hint">برای اصلاح اشتباه ورود اطلاعات. تاریخ شروع و مبالغ فقط تا وقتی قابل اصلاح است که صورتحسابی برای این قرارداد صادر نشده باشد؛ بعد از آن با «الحاقیه».</div>
@@ -1098,13 +1153,21 @@
     sheet(`<h3>ویرایش اطلاعات قرارداد ${esc(fa(c.contract_code))}</h3>
       <div class="hint">${ceo ? "تغییر شرایط مالی از ماه مشخص به بعد با «الحاقیه» است؛ اصلاح اشتباه ورود در بخش «اصلاح قرارداد»." : "شرایط مالی اینجا تغییر نمی‌کند؛ برای آن «الحاقیه» ثبت کنید. تغییرات بعد از تأیید مدیرعامل اعمال می‌شود."}</div>
       ${ceoFix}
-      <div class="section-title"><h2>ساختمان</h2></div><label>نام ساختمان</label><input type="text" data-g="building" data-f="name" data-old="${esc(b.name ?? "")}" value="${esc(b.name ?? "")}">${inp("building", "manager_name", b.manager_name)}${inp("building", "manager_mobile", b.manager_mobile, true)}${inp("building", "address", b.address)}
+      <div class="section-title"><h2>ساختمان</h2></div><label>نام ساختمان</label><input type="text" data-g="building" data-f="name" data-old="${esc(b.name ?? "")}" value="${esc(b.name ?? "")}">${inp("building", "postal_code", b.postal_code, true)}${inp("building", "manager_name", b.manager_name)}${inp("building", "manager_mobile", b.manager_mobile, true)}${inp("building", "address", b.address)}
       <div class="section-title"><h2>کارفرما</h2></div>${inp("customer", "name", cu.name)}${inp("customer", "mobile", cu.mobile, true)}${inp("customer", "national_id", cu.national_id, true)}${inp("customer", "address", cu.address)}
       ${elev.map((e) => `<div class="section-title"><h2>دستگاه ${fa(e.elevator_no)}${e.subscription_code ? ` · کد ${esc(fa(e.subscription_code))}` : ""}</h2></div>
         <div data-elev="${e.id}" data-no="${e.elevator_no}">${["stops", "capacity_persons", "motor_type", "cabin_door_type", "landing_door_type", "controller_brand", "notes"].map((f) => `<label>${FIELD_LABEL[f]}</label><input type="text" data-ef="${f}" data-old="${esc(e[f] ?? "")}" value="${esc(e[f] ?? "")}">`).join("")}</div>`).join("")}
-      <div class="section-title"><h2>قرارداد</h2></div>${inp("contract", "notes", c.notes)}
+      <div class="section-title"><h2>دستگاه جدید</h2></div><div data-field="newelev"></div>
+      <button type="button" class="btn secondary small" data-act="add-elev">+ افزودن دستگاه به این قرارداد</button>
+      <div class="section-title"><h2>قرارداد</h2></div>${inp("contract", "cooperation_year", c.cooperation_year, true)}${inp("contract", "notes", c.notes)}
       <div class="actions"><button class="btn" data-act="save">${role() === "CEO" ? "ذخیره" : "ارسال برای تأیید"}</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
+      el.querySelector('[data-act="add-elev"]').addEventListener("click", () => {
+        const box = document.createElement("div"); box.setAttribute("data-newelev", "1"); box.className = "card";
+        box.innerHTML = `<label>کد اشتراک دستگاه جدید</label><input type="text" class="ltr" data-nf="subscription_code" inputmode="numeric">
+          <label>تعداد توقف</label><input type="text" class="ltr" data-nf="stops" inputmode="numeric"><label>ظرفیت (نفر)</label><input type="text" class="ltr" data-nf="capacity_persons" inputmode="numeric">`;
+        el.querySelector('[data-field="newelev"]').appendChild(box); box.querySelector("input").focus();
+      });
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const payload = {};
         el.querySelectorAll("input[data-g]").forEach((i) => {
@@ -1118,6 +1181,11 @@
           if (Object.keys(ch).length > 2) ev.push(ch);
         });
         if (ev.length) payload.elevators = ev;
+        const ne = [...el.querySelectorAll("[data-newelev]")].map((box) => ({ subscription_code: toEn(box.querySelector("[data-nf=subscription_code]").value.trim()),
+          stops: toEn(box.querySelector("[data-nf=stops]").value.trim()), capacity_persons: toEn(box.querySelector("[data-nf=capacity_persons]").value.trim()) }))
+          .filter((x) => x.subscription_code || x.stops);
+        if (ne.some((x) => !x.subscription_code)) throw new Error("کد اشتراک دستگاه جدید را وارد کنید");
+        if (ne.length) payload.new_elevators = ne;
         if (ceo) {
           const fix = {};
           el.querySelectorAll("input[data-cf]").forEach((i) => { const v = toEn(i.value.trim()).replace(/[,٬\s]/g, ""); if (v !== toEn(i.dataset.old)) fix[i.dataset.cf] = v; });
@@ -1963,6 +2031,9 @@
     if (act === "send-location") { el.disabled = true; sendLocation(el.dataset.bid).catch((er) => toast(er.message)).finally(() => { el.disabled = false; }); }
     if (act === "go-plan") location.hash = "#/plan";
     if (act === "contract-tab") { contractTab = el.dataset.k; route(); }
+    if (act === "new-contract") sheetNewContract().catch((er) => toast(er.message));
+    if (act === "approve-contract" && confirm("این قرارداد تأیید و فعال شود؟")) rpc("approve_contract", { p_id: id, p_approve: true }).then(() => { toast("قرارداد فعال شد"); route(); }).catch((er) => toast(er.message));
+    if (act === "reject-contract") { const note = prompt("دلیل رد:"); if (note !== null) rpc("approve_contract", { p_id: id, p_approve: false, p_note: note }).then(() => { toast("قرارداد رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "csearch-clear") { contractSearch = ""; const i = document.getElementById("csearch"); if (i) i.value = ""; applyContractSearch(); }
     if (act === "go-locations") location.hash = "#/locations";
     if (act === "new-assignment") sheetNewAssignment().catch((er) => toast(er.message));

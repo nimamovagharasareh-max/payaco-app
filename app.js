@@ -359,6 +359,14 @@
         }
       } catch (e) { /* reminder only */ }
     }
+    if (role() === "CEO") {
+      try { // D-79: nightly backup on the company server reports here
+        const [b] = await api("app_settings?key=eq.backup.last&select=value");
+        const v = b ? JSON.parse(b.value) : null, age = v ? (Date.now() - new Date(v.at).getTime()) / 3600000 : Infinity;
+        if (!v || age > 36 || !String(v.note).startsWith("ok")) closeNote += `<div class="card" style="border-color:var(--danger)"><div class="item-title">بک‌آپ شبانه ${v ? (String(v.note).startsWith("ok") ? `${fa(Math.floor(age / 24))} روز است انجام نشده` : "ناموفق بود") : "هنوز راه‌اندازی نشده"}</div>
+          <div class="small muted">${v ? `آخرین گزارش: ${jtime(v.at)} · ${esc(v.note)}` : "نسخه‌ی پشتیبان روی سرور پایاکو هنوز گرفته نشده است."}</div></div>`;
+      } catch (e) { /* reminder only */ }
+    }
     if (can.changeContract()) {
       try {
         const r = renewalBuckets(await contractsList());

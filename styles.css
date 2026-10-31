@@ -424,3 +424,71 @@ details.fold > summary::before { content: "◂"; color: var(--muted); transition
 details.fold[open] > summary::before { transform: rotate(-90deg); }
 label.check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-weight: 500; }
 label.check input { width: 20px; height: 20px; flex: none; }
+
+/* v2.25: A4 print on the letterhead (contracts; statements and invoices follow) */
+body.pp-open #app, body.pp-open #toast:not(.show) { display: none; }
+.pp-wrap { position: fixed; inset: 0; z-index: 60; overflow: auto; background: #e6e9ee; -webkit-overflow-scrolling: touch; }
+.pp-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px calc(10px) 12px; padding-top: max(10px, env(safe-area-inset-top)); background: #fff; border-bottom: 1px solid var(--line); }
+.pp-bar .spacer { flex: 1; }
+.pp-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; margin: 0; }
+.pp-pages { padding: 8px 0 40px; }
+.pp-page { --g: #2e8b3e; --g2: #e9f3ea; --y: #f2b51c; --y2: #fff6dc; --ink: #1f2733; --mut: #5f6d84; --ln: #cfd6df;
+  position: relative; width: 210mm; height: 297mm; margin: 0 auto 10px; background: #fff; overflow: hidden; color: var(--ink); zoom: var(--z, 1);
+  box-shadow: 0 2px 10px rgba(0,0,0,.12); -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 9.6pt; line-height: 1.75; }
+.pp-art { position: absolute; inset: 0; width: 210mm; height: 297mm; font-family: inherit; }
+.pp-logo { position: absolute; left: 19mm; top: 10mm; width: 53mm; }
+.pp-member { position: absolute; left: 19mm; top: 42.6mm; font-size: 5.6pt; font-weight: 700; color: #3a3f47; line-height: 1.4; }
+.pp-addr { position: absolute; right: 57mm; top: 21mm; font-size: 8.4pt; line-height: 2; color: #4b525c; }
+.pp-addr b { color: #2c3138; font-weight: 800; }
+.pp-meta { position: absolute; right: 13mm; top: 14.5mm; font-size: 8.6pt; line-height: 1; }
+.pp-meta div { display: flex; align-items: baseline; gap: 2mm; height: 7.6mm; }
+.pp-meta span { color: #8a929e; width: 11mm; }
+.pp-meta bdi { min-width: 28mm; border-bottom: .25mm dotted #b9c0ca; padding-bottom: .6mm; font-weight: 700; font-size: 9.4pt; text-align: center; }
+.pp-foot { position: absolute; left: 19mm; bottom: 9mm; display: flex; gap: 6mm; font-size: 8pt; color: #6b7380; direction: ltr; line-height: 1; }
+.pp-foot span { display: inline-flex; align-items: center; gap: 1.4mm; }
+.pp-no { position: absolute; right: 17mm; bottom: 9mm; font-size: 7.6pt; color: #8a929e; display: flex; gap: 2.4mm; align-items: baseline; line-height: 1; }
+.pp-iso { direction: ltr; font-family: ui-monospace, Menlo, monospace; font-size: 7pt; color: #6b7380; }
+.pp-sign { position: absolute; right: 17mm; bottom: 15mm; display: flex; gap: 4mm; font-size: 7pt; color: #8a929e; line-height: 1.4; }
+.pp-sign div { width: 30mm; height: 8mm; border: .25mm dashed #b9c0ca; border-radius: 1.5mm; padding: .8mm 1.5mm; }
+.pp-draft { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-24deg); font-size: 40pt; font-weight: 900; color: rgba(192, 57, 43, .13); white-space: nowrap; pointer-events: none; }
+/* office paper that already carries the printed letterhead: only number, date, attachment and text are printed */
+.pp-pages.paper .pp-art, .pp-pages.paper .pp-logo, .pp-pages.paper .pp-member, .pp-pages.paper .pp-addr, .pp-pages.paper .pp-foot, .pp-pages.paper .pp-meta span { visibility: hidden; }
+.pp-pages.paper .pp-meta bdi { border-color: transparent; }
+.pp-body { position: absolute; top: 55mm; bottom: 22mm; left: 17mm; right: 17mm; }
+.pp-page.compact { font-size: 8.4pt; line-height: 1.5; }
+.pp-page.compact .pp-body { top: 52mm; bottom: 26mm; left: 15mm; right: 15mm; }
+.pp-ctitle { text-align: center; } .pp-ctitle .bis, .pp-ctitle .ayah { font-size: 8pt; color: var(--mut); line-height: 1.5; }
+.pp-ctitle h1 { font-size: 13.5pt; color: var(--g); margin: .5mm 0; font-weight: 900; }
+.pp-tags { display: flex; justify-content: center; gap: 3mm; margin-bottom: 1.6mm; }
+.pp-chip { border: .35mm solid var(--g); color: var(--g); border-radius: 10mm; padding: .2mm 2.6mm; font-size: 7.8pt; font-weight: 800; white-space: nowrap; }
+.pp-chip.y { border-color: var(--y); background: var(--y2); color: #7a5600; }
+.pp-body .pp-a { margin: 0 0 1.2mm; text-align: justify; }
+.pp-body .pp-a.cont { margin-top: -.9mm; }
+.pp-body .pp-a h4 { margin: 0; font-size: 9.2pt; color: var(--g); font-weight: 800; }
+.pp-body .pp-a h4::before { content: ""; display: inline-block; width: 2mm; height: 2mm; background: var(--y); border-radius: .5mm; margin-left: 1.6mm; vertical-align: middle; }
+.pp-body .pp-a p { margin: 0 0 .3mm; } .pp-body .pp-a ul { margin: 0; padding-right: 4mm; } .pp-body .pp-a li { margin: 0; }
+.pp-body .tb { color: #3d4652; } .pp-body .tb b { color: var(--ink); }
+.pp-fill { font-weight: 800; color: #12351a; background: linear-gradient(transparent 62%, #fff0c2 62%); padding: 0 .6mm; }
+.pp-miss { color: #c0392b; font-weight: 800; }
+.pp-body table { width: 100%; border-collapse: collapse; }
+.pp-spec td, .pp-spec th { border: .25mm solid var(--ln); padding: .35mm 1.6mm; font-size: 8.2pt; text-align: right; }
+.pp-spec th { background: var(--g2); color: #1d5a28; font-weight: 700; }
+.pp-spec td.k { width: 30mm; color: var(--mut); background: #fafbfc; }
+.pp-money th { background: var(--g); color: #fff; padding: .7mm 1.5mm; font-size: 8pt; font-weight: 700; border: .25mm solid var(--g); text-align: center; }
+.pp-money td { border: .25mm solid var(--ln); padding: .8mm 1.5mm; text-align: center; font-weight: 800; font-size: 8.8pt; }
+.pp-money td.hl { background: var(--y2); }
+.pp-sub { font-size: 7.6pt; color: var(--mut); text-align: left; }
+.pp-csign { display: flex; gap: 6mm; margin-top: 1.5mm; }
+.pp-csign div { flex: 1; height: 19mm; border: .3mm solid var(--ln); border-radius: 2.4mm; padding: 2mm 3mm; font-size: 8.4pt; color: var(--mut); }
+.pp-csign b { display: block; color: var(--ink); font-size: 9pt; }
+.tpl-body { min-height: 55vh; font-size: 14px; line-height: 1.9; }
+.tpl-keys button { font-size: 12px; }
+@media print {
+  @page { size: A4; margin: 0; }
+  body.pp-open { background: #fff; }
+  body.pp-open .pp-wrap { position: static; overflow: visible; background: #fff; }
+  .pp-bar { display: none !important; }
+  .pp-pages { padding: 0; }
+  .pp-page { zoom: 1 !important; margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
+  .pp-page:last-child { break-after: auto; page-break-after: auto; }
+}

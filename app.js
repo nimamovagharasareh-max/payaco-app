@@ -484,22 +484,26 @@
 
   async function sheetNewContract() {
     const ceo = role() === "CEO";
-    const blds = await api("buildings?is_active=eq.true&select=id,name,address&order=name");
+    const [blds, nextCode] = await Promise.all([api("buildings?is_active=eq.true&select=id,name,address&order=name"), rpc("next_subscription_code").catch(() => "")]);
+    const base = /^\d+$/.test(String(nextCode || "")) ? Number(nextCode) : null; let elevN = 0; // D-77: next free code after the last one
     const f = (k, label, ltr, ph) => `<label>${label}</label><input type="text" data-nc="${k}" ${ltr ? 'class="ltr" inputmode="numeric"' : ""} placeholder="${ph || ""}">`;
-    const elevRow = () => `<div class="card" data-ncelev="1"><label>کد اشتراک دستگاه</label><input type="text" class="ltr" inputmode="numeric" data-ne="subscription_code">
-      <label>تعداد توقف</label><input type="text" class="ltr" inputmode="numeric" data-ne="stops"><label>ظرفیت (نفر)</label><input type="text" class="ltr" inputmode="numeric" data-ne="capacity_persons"></div>`;
+    const ne = (k, ltr) => `<label>${FIELD_LABEL[k]}</label><input type="text" data-ne="${k}"${ltr ? ' class="ltr" inputmode="numeric"' : ""}${SPEC_LIST[k] ? ` list="dl-${k}"` : ""}>`;
+    const elevRow = () => { const code = base ? String(base + elevN) : ""; elevN++;
+      return `<div class="card" data-ncelev="1"><label>کد اشتراک دستگاه</label><input type="text" class="ltr" inputmode="numeric" data-ne="subscription_code" value="${esc(code)}">
+      ${ne("stops", 1)}${ne("capacity_persons", 1)}${ne("usage_type")}${ne("traffic")}${ne("motor_type")}${ne("cabin_door_type")}${ne("landing_door_type")}${ne("controller_brand")}</div>`; };
     sheet(`<h3>قرارداد جدید</h3>
       <div class="hint">${ceo ? "با ذخیره، قرارداد فعال می‌شود. می‌توانید با اطلاعات ناقص هم ثبت کنید و بعد کامل کنید." : "قرارداد پس از تأیید مدیرعامل فعال می‌شود. همه‌ی خانه‌ها لازم است."}</div>
       <div class="section-title"><h2>ساختمان</h2></div>
       <label>ساختمان</label><select data-nc="building_id"><option value="">— ساختمان جدید —</option>${blds.map((b) => `<option value="${b.id}">${esc(b.name)}${b.address ? " · " + esc(b.address) : ""}</option>`).join("")}</select>
       <div data-field="newb">${f("b_name", "نام ساختمان")}${f("b_address", "نشانی")}${f("b_postal", "کد پستی", true)}${f("b_mname", "نام مدیر ساختمان")}${f("b_mmobile", "موبایل مدیر ساختمان", true, "09")}</div>
       <div class="section-title"><h2>کارفرما</h2></div>${f("cu_name", "نام کارفرما")}${f("cu_nid", "کد/شناسه ملی", true)}${f("cu_mobile", "موبایل", true, "09")}${f("cu_address", "نشانی کارفرما")}
-      <div class="section-title"><h2>قرارداد</h2></div>${f("code", "کد قرارداد", true)}
+      <div class="section-title"><h2>قرارداد</h2></div><label>کد قرارداد</label><input type="text" data-nc="code" class="ltr" inputmode="numeric" value="${esc(nextCode || "")}">
+      ${base ? `<div class="hint">پیشنهاد سیستم: کد بعد از آخرین کد ثبت‌شده (${fa(base - 1)}). در صورت نیاز تغییر دهید.</div>` : ""}
       <label>تاریخ شروع</label>${datePickerHtml("ncstart")}<label>تاریخ پایان</label>${datePickerHtml("ncend", addDays(todayTehran(), 364))}
       ${amountFieldHtml("ncm", "مبلغ ماهانه (بدون ارزش افزوده)")}${amountFieldHtml("ncd", "کسر سرویس انجام‌نشده")}
       ${f("spm", "تعداد سرویس در ماه", true, "1")}${f("coop", "سال‌های همکاری (تعداد سال)", true, "1")}
       <label class="check"><input type="checkbox" data-nc="vat_exempt"> معاف از مالیات بر ارزش افزوده (صورتحساب بدون ۱۰٪)</label>
-      <div class="section-title"><h2>دستگاه‌ها</h2></div><div data-field="elevs">${elevRow()}</div>
+      <div class="section-title"><h2>دستگاه‌ها</h2></div><div data-field="elevs">${elevRow()}</div>${specDatalists()}
       <button type="button" class="btn secondary small" data-act="nc-add-elev">+ دستگاه دیگر</button>
       <div class="actions"><button class="btn" data-act="save">${ceo ? "ثبت قرارداد" : "ارسال برای تأیید"}</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
@@ -510,9 +514,8 @@
       el.querySelector('[data-act="nc-add-elev"]').addEventListener("click", () => el.querySelector('[data-field="elevs"]').insertAdjacentHTML("beforeend", elevRow()));
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const raw = (k) => ((el.querySelector(`[data-nc="${k}"]`) || {}).value || "").trim();
-        const elevators = [...el.querySelectorAll("[data-ncelev]")].map((b) => ({ subscription_code: toEn(b.querySelector("[data-ne=subscription_code]").value.trim()),
-          stops: toEn(b.querySelector("[data-ne=stops]").value.trim()), capacity_persons: toEn(b.querySelector("[data-ne=capacity_persons]").value.trim()) }))
-          .filter((x) => x.subscription_code || x.stops || x.capacity_persons);
+        const elevators = [...el.querySelectorAll("[data-ncelev]")].map((b) => { const o = {}; b.querySelectorAll("[data-ne]").forEach((i) => { o[i.dataset.ne] = ["subscription_code", "stops", "capacity_persons"].includes(i.dataset.ne) ? toEn(i.value.trim()) : i.value.trim(); }); return o; })
+          .filter((x) => x.stops || x.capacity_persons || x.motor_type || x.usage_type || (x.subscription_code && x !== null));
         const m = readAmount(el, "ncm"), d = readAmount(el, "ncd");
         const payload = {
           building: bsel.value ? { id: Number(bsel.value) } : { name: raw("b_name"), address: raw("b_address"), postal_code: v("b_postal"), manager_name: raw("b_mname"), manager_mobile: v("b_mmobile") },
@@ -534,7 +537,7 @@
       api(`v_contract_overview?id=eq.${id}&select=*`),
       api(`invoices?contract_id=eq.${id}&select=id,document_type,document_number,issue_date,total_rial,status,opening_balance_rial,invoice_items(description,amount_rial,debit_credit)&order=issue_date.desc,id.desc`),
       api(`contracts?previous_contract_id=eq.${id}&select=id,contract_code`),
-      api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason`),
+      api(`contracts?id=eq.${id}&select=billing_hold,billing_hold_reason,doc_number`),
       isStaff() ? api(`contract_change_requests?contract_id=eq.${id}&select=id,kind,payload,status,document_number,requested_at,decided_at,decision_note&order=id.desc`) : Promise.resolve([]),
       api(`contract_terms?contract_id=eq.${id}&select=effective_ym,monthly_amount_rial,missed_service_deduction_rial,services_per_month,source&order=effective_ym`),
       api(`documents?contract_id=eq.${id}&storage_path=not.is.null&select=id,document_type,file_name,storage_path,uploaded_at,notes,change_request_id&order=uploaded_at.desc`)]);
@@ -552,6 +555,7 @@
     if (can.recordPayment() && invoices.some((i) => !["cancelled", "draft"].includes(i.status) && Number(i.total_rial) > 0)) actions.push(`<button class="btn ok" data-act="pay" data-id="${id}">ثبت دریافت وجه</button>`);
     if (role() === "CEO" && (!opening || opening.status === "draft")) actions.push(`<button class="btn secondary" data-act="opening" data-id="${id}">${opening ? "مانده افتتاحیه (پیش‌نویس)" : "+ مانده افتتاحیه"}</button>`);
     actions.push(`<button class="btn secondary" data-act="contract-report" data-id="${id}">گزارش عملکرد</button>`);
+    if (can.changeContract() && hold && (hold.doc_number || c.status === "active")) actions.push(`<button class="btn secondary" data-act="print-contract" data-id="${id}">${hold.doc_number ? `فایل قرارداد <bdi dir="ltr">${esc(fa(hold.doc_number))}</bdi>` : "فایل قرارداد (پیش‌نویس و صدور)"}</button>`);
     if (role() === "CEO" && hold && !hold.billing_hold && c.status === "active") actions.push(`<button class="btn secondary" data-act="set-hold" data-id="${id}">تعلیق صورتحساب</button>`);
     if (can.changeContract()) {
       actions.push(`<button class="btn secondary" data-act="edit-contract" data-id="${id}">ویرایش اطلاعات</button>`);
@@ -649,6 +653,8 @@
         <div class="small muted">ویرایش، الحاقیه و تمدیدهای ثبت‌شده توسط کارمند</div></div>${pendingChanges ? `<span class="badge warn">${fa(pendingChanges)} منتظر</span>` : "<span>←</span>"}</div></div>` : ""}
       ${can.recordPayment() ? `<div class="card tap" data-act="go-claims"><div class="item-head"><div><div class="item-title">اعلام پرداخت مشتریان</div>
         <div class="small muted">واریزهایی که مشترک‌ها از لینک صورتحساب اعلام کرده‌اند</div></div><span>←</span></div></div>` : ""}
+      ${role() === "CEO" ? `<div class="card tap" data-act="go" data-href="#/templates"><div class="item-head"><div><div class="item-title">متن قرارداد</div>
+        <div class="small muted">ویرایش متن قرارداد سرویس و نگهداری با ثبت بازنگری (PY-FO-PC-G08)</div></div><span>←</span></div></div>` : ""}
       ${role() === "CEO" ? `<div class="card tap" data-act="go-company"><div class="item-head"><div><div class="item-title">اطلاعات شرکت روی اسناد</div>
         <div class="small muted">تلفن، سایت، اینستاگرام، آدرس، شماره کارت و شبا</div></div><span>←</span></div></div>` : ""}
       ${role() === "CEO" ? `<div class="card tap" data-act="go-opening"><div class="item-head"><div><div class="item-title">مانده‌های افتتاحیه</div>
@@ -1205,7 +1211,10 @@
   const CHANGE_KIND = { edit: "ویرایش اطلاعات", amendment: "الحاقیه", renewal: "تمدید" };
   const CHANGE_STATUS = { pending: ["منتظر تأیید مدیرعامل", "warn"], approved: ["اعمال شد", "ok"], rejected: ["رد شد", "danger"], withdrawn: ["پس گرفته شد", ""] };
   const FIELD_LABEL = { postal_code: "کد پستی", cooperation_year: "سال‌های همکاری (تعداد سال)", subscription_code: "کد اشتراک", contract_code: "کد قرارداد", start_date: "تاریخ شروع", end_date: "تاریخ پایان", monthly_amount_rial: "مبلغ ماهانه (ریال)", missed_service_deduction_rial: "کسر سرویس انجام‌نشده (ریال)", services_per_month: "سرویس در ماه", manager_name: "مدیر ساختمان", manager_mobile: "موبایل مدیر", address: "نشانی", name: "نام", mobile: "موبایل", national_id: "کد/شناسه ملی", notes: "توضیحات",
-    stops: "توقف", capacity_persons: "ظرفیت", motor_type: "موتور", cabin_door_type: "درب کابین", landing_door_type: "درب طبقات", controller_brand: "تابلو فرمان" };
+    stops: "توقف", capacity_persons: "ظرفیت", motor_type: "موتور", cabin_door_type: "درب کابین", landing_door_type: "درب طبقات", controller_brand: "تابلو فرمان", usage_type: "نوع کاربری", traffic: "میزان ترافیک" };
+  // suggestions only; any text can be typed
+  const SPEC_LIST = { usage_type: ["مسکونی", "اداری", "تجاری", "درمانی", "هتل", "آموزشی"], traffic: ["کم", "متوسط", "زیاد"] };
+  const specDatalists = () => Object.entries(SPEC_LIST).map(([k, l]) => `<datalist id="dl-${k}">${l.map((x) => `<option value="${x}">`).join("")}</datalist>`).join("");
   const ymText = (ym) => `${MONTHS[ym % 100 - 1]} ${fa(Math.floor(ym / 100))}`;
   function changeSummary(k) {
     const p = k.payload || {};
@@ -1242,7 +1251,7 @@
       <label>کسر سرویس انجام‌نشده (ریال)</label><input type="text" inputmode="numeric" class="ltr" data-cf="missed_service_deduction_rial" data-old="${c.missed_service_deduction_rial}" value="${c.missed_service_deduction_rial}">
       <label>تعداد سرویس در ماه</label><input type="text" inputmode="numeric" class="ltr" data-cf="services_per_month" data-old="${c.services_per_month}" value="${c.services_per_month}">
       <div class="hint" data-field="fix-preview"></div>` : "";
-    const elev = await api(`elevators?contract_id=eq.${contractId}&select=id,elevator_no,subscription_code,stops,capacity_persons,motor_type,cabin_door_type,landing_door_type,controller_brand,notes&order=elevator_no`);
+    const elev = await api(`elevators?contract_id=eq.${contractId}&select=id,elevator_no,subscription_code,stops,capacity_persons,usage_type,traffic,motor_type,cabin_door_type,landing_door_type,controller_brand,notes&order=elevator_no`);
     const b = c.buildings || {}, cu = c.customers || {};
     const inp = (grp, f, v, ltr) => `<label>${FIELD_LABEL[f]}</label><input type="text" data-g="${grp}" data-f="${f}" data-old="${esc(v ?? "")}" value="${esc(v ?? "")}" ${ltr ? 'class="ltr" inputmode="tel"' : ""}>`;
     sheet(`<h3>ویرایش اطلاعات قرارداد ${esc(fa(c.contract_code))}</h3>
@@ -1251,7 +1260,7 @@
       <div class="section-title"><h2>ساختمان</h2></div><label>نام ساختمان</label><input type="text" data-g="building" data-f="name" data-old="${esc(b.name ?? "")}" value="${esc(b.name ?? "")}">${inp("building", "postal_code", b.postal_code, true)}${inp("building", "manager_name", b.manager_name)}${inp("building", "manager_mobile", b.manager_mobile, true)}${inp("building", "address", b.address)}
       <div class="section-title"><h2>کارفرما</h2></div>${inp("customer", "name", cu.name)}${inp("customer", "mobile", cu.mobile, true)}${inp("customer", "national_id", cu.national_id, true)}${inp("customer", "address", cu.address)}
       ${elev.map((e) => `<div class="section-title"><h2>دستگاه ${fa(e.elevator_no)}${e.subscription_code ? ` · کد ${esc(fa(e.subscription_code))}` : ""}</h2></div>
-        <div data-elev="${e.id}" data-no="${e.elevator_no}">${["stops", "capacity_persons", "motor_type", "cabin_door_type", "landing_door_type", "controller_brand", "notes"].map((f) => `<label>${FIELD_LABEL[f]}</label><input type="text" data-ef="${f}" data-old="${esc(e[f] ?? "")}" value="${esc(e[f] ?? "")}">`).join("")}</div>`).join("")}
+        <div data-elev="${e.id}" data-no="${e.elevator_no}">${["usage_type", "traffic", "stops", "capacity_persons", "motor_type", "cabin_door_type", "landing_door_type", "controller_brand", "notes"].map((f) => `<label>${FIELD_LABEL[f]}</label><input type="text" data-ef="${f}" data-old="${esc(e[f] ?? "")}" value="${esc(e[f] ?? "")}"${SPEC_LIST[f] ? ` list="dl-${f}"` : ""}>`).join("")}</div>`).join("")}${specDatalists()}
       <div class="section-title"><h2>دستگاه جدید</h2></div><div data-field="newelev"></div>
       <button type="button" class="btn secondary small" data-act="add-elev">+ افزودن دستگاه به این قرارداد</button>
       <div class="section-title"><h2>قرارداد</h2></div>${inp("contract", "cooperation_year", c.cooperation_year, true)}${inp("contract", "notes", c.notes)}
@@ -1999,7 +2008,8 @@
     const smsMode = (st.find((x) => x.key === "sms.mode") || {}).value || "test";
     const testMobile = (st.find((x) => x.key === "sms.test_mobile") || {}).value || "";
     const F = [["name", "نام روی اسناد"], ["slogan", "شعار"], ["slogan_en", "شعار انگلیسی"], ["phone", "تلفن", 1], ["phone2", "تلفن دوم", 1], ["website", "سایت", 1], ["instagram", "پیج اینستاگرام", 1],
-      ["address", "آدرس دفتر"], ["bank", "بانک"], ["account_holder", "به نام"], ["card_no", "شماره کارت", 1], ["account_no", "شماره حساب", 1], ["sheba", "شماره شبا", 1], ["footer_note", "یادداشت پایین اسناد"]];
+      ["address", "آدرس دفتر"], ["bank", "بانک"], ["account_holder", "به نام"], ["card_no", "شماره کارت", 1], ["account_no", "شماره حساب", 1], ["sheba", "شماره شبا", 1], ["footer_note", "یادداشت پایین اسناد"],
+      ["legal_name", "نام حقوقی شرکت در قرارداد"], ["representative", "نماینده‌ی شرکت در قرارداد (مثلاً: آقای ...)"], ["parts_cap_rial", "سقف تعویض قطعه بدون اجازه‌ی کارفرما (ریال، تبصره ۳)", 1]];
     return shell("اطلاعات شرکت روی اسناد", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
       <div class="card" id="company-form">${F.map(([k, l, ltr]) => `<label>${l}</label><input type="text" data-field="${k}" value="${esc(c[k] || "")}" ${ltr ? 'class="ltr"' : ""}>`).join("")}
       <div class="hint">این اطلاعات روی همه‌ی صورتحساب‌ها، فاکتورها و لینک‌های پرداخت نمایش داده می‌شود. لوگو ثابت است.</div>
@@ -2014,6 +2024,171 @@
         <div class="actions"><button class="btn secondary small" data-act="sms-tech-tpl-save">ذخیره‌ی قالب‌های سرویس‌کار</button></div>
         <label>شماره‌ی آزمایشی پیامک</label><div class="row"><input type="text" data-field="sms-test" class="ltr" inputmode="tel" value="${esc(testMobile)}" placeholder="خالی = تلفن شرکت" style="flex:1"><button class="btn secondary small" data-act="sms-test-save">ذخیره</button></div>
         <div class="actions"><button class="btn secondary small" data-act="sms-ping">ارسال پیامک آزمایشی</button><button class="btn ${smsMode === "live" ? "secondary" : "danger"} small" data-act="sms-mode" data-k="${smsMode === "live" ? "test" : "live"}">${smsMode === "live" ? "برگشت به حالت آزمایشی" : "فعال‌سازی ارسال واقعی"}</button></div></div>`);
+  }
+
+  /* ------------------------------------------------------------------ A4 print on the letterhead (D-71..D-75) */
+  const jdateTz = (d) => (d ? new Intl.DateTimeFormat("fa-IR-u-ca-persian", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "Asia/Tehran" }).format(new Date(d)) : "—");
+  const LH_ICON = (p) => `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#7d8591" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+  function letterheadHtml(meta, company) {
+    const c = company || {};
+    return `<svg class="pp-art" viewBox="0 0 210 297" aria-hidden="true">
+      <path d="M0 0 H78.9 L87.6 10.6 L85.6 14.4 L116 44.2 Q117.6 46 116.4 47.2 Q115.6 47.9 114 47.9 H71.4 L67 40.6 H0 Z" fill="#f2b51c"/>
+      <g fill="none" stroke="#fff" stroke-width=".42" stroke-linejoin="round" stroke-linecap="round">
+        <path d="M2 38.3 H29 L31.6 36.3 H50 L53.6 39.9 H66 M83.6 39.9 H90 L92 37.9 H104 L112.4 46.4"/>
+        <path d="M2 39.6 H29.6 L32.2 37.6 H49.4 L53 41.2 H66 M83.6 41.2 H90.6 L92.6 39.2 H103.4 L110.6 46.4"/>
+        <path d="M24 38.3 v-2.2 M25 38.3 v-2.2 M35 36.3 v-2.2 M36 36.3 v-2.2 M40 36.3 v-3.2 M45.5 36.3 v-2.2 M46.5 36.3 v-2.2 M57 39.9 v-2.4 M58 39.9 v-2.4 M62 39.9 v-2.4 M94 37.9 v-2 M95 37.9 v-2 M99.5 37.9 v-2.2 M100.5 37.9 v-2.2 M104.6 38.4 v-2"/>
+        <rect x="66.6" y="32.4" width="7.6" height="7.6" rx="1.3"/><rect x="75.6" y="32.4" width="7.6" height="7.6" rx="1.3"/>
+        <path d="M68.2 38.4 H69.6 L72.4 34.6 H73"/><rect x="77.2" y="33.6" width="2.6" height="5.2" rx=".3"/><path d="M81.4 34 v4.4 M80.8 34.8 l.6-.8 .6 .8 M80.8 37.6 l.6 .8 .6-.8"/>
+      </g><text x="74.9" y="45.6" fill="#fff" font-size="2.6" font-weight="800" text-anchor="middle" letter-spacing=".3">LIFT</text></svg>
+      <img class="pp-logo" src="icons/logo_lh.png" alt="">
+      <div class="pp-member">عضو رسمی اتحادیه کشوری صنایع آسانسور و پله برقی ایران</div>
+      <div class="pp-addr"><b>دفتر مرکزی:</b> کیان‌آباد، خیابان ۱۵ شرقی<br>بین اصلی و احداثی، پلاک ۱۶<br><b>سرویس و نگهداری:</b> ${esc(fa(c.phone || ""))}</div>
+      <div class="pp-meta"><div><span>شماره:</span><bdi dir="ltr">${esc(fa(meta.no || "—"))}</bdi></div><div><span>تاریخ:</span><bdi>${esc(meta.date || "—")}</bdi></div><div><span>پیوست:</span><bdi>${esc(meta.att || "ندارد")}</bdi></div></div>
+      <div class="pp-foot"><span>${LH_ICON('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>')}${esc(c.website || "www.payaco.org")}</span><span>${LH_ICON('<rect x="4" y="4" width="16" height="16" rx="4.5"/><circle cx="12" cy="12" r="3.6"/>')}${esc(c.instagram || "payacolift")}</span><span>${LH_ICON('<path d="M21 4 3 11l6 2 2 6 3-4 5 4z"/><path d="m9 13 8-6"/>')}${esc(c.instagram || "payacolift")}</span></div>`;
+  }
+  // lays blocks out on A4 pages; a block that does not fit starts the next page
+  function paginate(host, meta, company, head, blocks, opt = {}) {
+    const pages = [];
+    const newPage = () => {
+      const p = document.createElement("section"); p.className = "pp-page" + (opt.sign ? " compact" : "");
+      p.innerHTML = `${letterheadHtml(meta, company)}<div class="pp-body"></div>${opt.sign ? `<div class="pp-sign"><div>امضای پیمانکار</div><div>امضای کارفرما</div></div>` : ""}<div class="pp-no"></div>${opt.draft ? `<div class="pp-draft">پیش‌نویس — بدون شماره</div>` : ""}`;
+      host.appendChild(p); pages.push(p); return p.querySelector(".pp-body");
+    };
+    let body = newPage(); body.innerHTML = head;
+    for (const b of blocks) {
+      body.insertAdjacentHTML("beforeend", `<div class="pp-blk">${b}</div>`);
+      if (body.scrollHeight > body.clientHeight + 1 && body.children.length > 1) { body.lastElementChild.remove(); body = newPage(); body.insertAdjacentHTML("beforeend", `<div class="pp-blk">${b}</div>`); }
+    }
+    pages.forEach((p, i) => { p.querySelector(".pp-no").innerHTML = `<span>صفحه ${fa(i + 1)} از ${fa(pages.length)}</span>${meta.form ? `<span>·</span><span class="pp-iso">${esc(meta.form)} · Rev.${String(meta.rev || 0).padStart(2, "0")}</span><span>· ابلاغ ${esc(meta.issued || "")}</span>` : ""}`; });
+    return pages;
+  }
+  let ppPaper = true; // D-71: default = office paper that already carries the letterhead
+  try { ppPaper = localStorage.getItem("pp-paper") !== "0"; } catch (e) { /* default */ }
+  function openPrint(title, build, extra = "") {
+    document.querySelectorAll(".pp-wrap").forEach((x) => x.remove());
+    const w = document.createElement("div"); w.className = "pp-wrap";
+    w.innerHTML = `<div class="pp-bar no-print"><b>${esc(title)}</b><span class="spacer"></span>
+      <label class="pp-toggle"><input type="checkbox" data-pp="paper" ${ppPaper ? "checked" : ""}> چاپ روی کاغذ سربرگ‌دار</label>
+      ${extra}<button class="btn small" data-pp="print">چاپ / PDF</button><button class="btn secondary small" data-pp="close">بستن</button></div>
+      <div class="pp-pages${ppPaper ? " paper" : ""}"></div>`;
+    document.body.appendChild(w); document.body.classList.add("pp-open");
+    const host = w.querySelector(".pp-pages");
+    const fit = () => { host.style.setProperty("--z", String(Math.min(1, (window.innerWidth - 16) / 794))); };
+    fit(); window.addEventListener("resize", fit);
+    const close = () => { w.remove(); document.body.classList.remove("pp-open"); window.removeEventListener("resize", fit); };
+    w.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-pp]"); if (!b) return;
+      if (b.dataset.pp === "print") window.print();
+      if (b.dataset.pp === "close") close();
+    });
+    w.querySelector('[data-pp="paper"]').addEventListener("change", (e) => {
+      ppPaper = e.target.checked; host.classList.toggle("paper", ppPaper);
+      try { localStorage.setItem("pp-paper", ppPaper ? "1" : "0"); } catch (er) { /* per-device convenience only */ }
+    });
+    host.style.setProperty("--z", "1");
+    build(host); fit();
+    return { wrap: w, close };
+  }
+
+  /* contract text: template markup -> blocks */
+  const CT_KEYS = ["شرکت", "نشانی_شرکت", "نماینده_شرکت", "تلفن_شرکت", "کارفرما", "نماینده_کارفرما", "شناسه_ملی_کارفرما", "تلفن_کارفرما", "نشانی_کارفرما", "نام_ساختمان", "نشانی_ساختمان",
+    "تعداد_دستگاه", "مدت", "تاریخ_شروع", "تاریخ_پایان", "مبلغ_خالص_سالانه", "مبلغ_ماهانه", "سقف_قطعات", "کسر_عدم_سرویس", "شماره_کارت", "بانک", "صاحب_حساب", "سال_همکاری", "تعداد_مواد_و_تبصره‌ها"];
+  const CT_TABLES = ["[[جدول_مشخصات]]", "[[جدول_مبلغ]]"];
+  function contractBlocks(body, v, tables) {
+    const lines = String(body || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const nArt = lines.filter((l) => l.startsWith("# ")).length, nNote = lines.filter((l) => /^تبصره/.test(l)).length;
+    const vals = { ...v, "تعداد_مواد_و_تبصره‌ها": `${numWords(nArt)} ماده${nNote ? ` و ${numWords(nNote)} تبصره` : ""}` };
+    const fill = (s) => esc(s).replace(/\{([^{}\s]+)\}/g, (m, k) => (k in vals && vals[k] !== null && vals[k] !== undefined && vals[k] !== "" ? `<span class="pp-fill">${vals[k]}</span>` : `<span class="pp-miss">${esc(m)}</span>`));
+    const blocks = []; let head = "";
+    for (const l of lines) {
+      if (l.startsWith("# ")) { head = `<h4>${fill(l.slice(2))}</h4>`; continue; }
+      let h;
+      if (CT_TABLES.includes(l)) h = tables[l] || "";
+      else if (l.startsWith("- ")) h = `<ul><li>${fill(l.slice(2))}</li></ul>`;
+      else if (/^تبصره[^:]{0,12}:/.test(l)) { const i = l.indexOf(":"); h = `<p class="tb"><b>${fill(l.slice(0, i + 1))}</b>${fill(l.slice(i + 1))}</p>`; }
+      else h = `<p>${fill(l)}</p>`;
+      blocks.push(`<div class="pp-a${head ? "" : " cont"}">${head}${h}</div>`); head = "";
+    }
+    return blocks;
+  }
+  const rialText = (n) => `${num(n)} ریال`;
+  async function contractPrintData(id, templateId) {
+    const [[c], [k], company] = await Promise.all([
+      api(`v_contract_overview?id=eq.${id}&select=*`),
+      api(`contracts?id=eq.${id}&select=doc_number,doc_issued_at,doc_template_id,customers(name,national_id,mobile,address),buildings(name,address)`),
+      rpc("get_company_profile")]);
+    const elev = await api(`elevators?contract_id=eq.${id}&is_active=eq.true&select=elevator_no,subscription_code,stops,capacity_persons,usage_type,traffic,motor_type,cabin_door_type,landing_door_type,controller_brand&order=elevator_no`);
+    const tid = templateId || k.doc_template_id;
+    const [t] = await api(`doc_templates?form_code=eq.PY-FO-PC-G08&select=id,rev,title,body,issued_on${tid ? `&id=eq.${tid}` : "&order=rev.desc&limit=1"}`);
+    return { c, k, company, elev, t };
+  }
+  function renderContract(host, d) {
+    const { c, k, company, elev, t } = d, cu = k.customers || {}, b = k.buildings || {};
+    const days = Math.round((new Date(c.end_date) - new Date(c.start_date)) / 86400000) + 1;
+    const months = Math.max(1, Math.round(days / 30.44));
+    const monthly = Number(c.monthly_amount_rial || 0), yearNet = monthly * months;
+    const vat = c.vat_exempt ? 0 : 10, vatAmt = Math.round(yearNet * vat / 100);
+    const cap = Number(toEn(company.parts_cap_rial || "").replace(/\D/g, "")) || null;
+    const v = { "شرکت": esc(company.legal_name || company.name || ""), "نشانی_شرکت": esc(fa(company.address || "")), "نماینده_شرکت": esc(company.representative || ""), "تلفن_شرکت": esc(fa(company.phone || "")),
+      "کارفرما": esc(cu.name || c.customer_name || ""), "نماینده_کارفرما": esc(c.manager_name || ""), "شناسه_ملی_کارفرما": esc(fa(cu.national_id || "")), "تلفن_کارفرما": esc(fa(cu.mobile || c.manager_mobile || "")),
+      "نشانی_کارفرما": esc(fa(cu.address || b.address || "")), "نام_ساختمان": esc(b.name || ""), "نشانی_ساختمان": esc(fa(b.address || "")),
+      "تعداد_دستگاه": `${numWords(elev.length || 1)} دستگاه`, "مدت": `${fa(months)} ماه`, "تاریخ_شروع": jdate(c.start_date), "تاریخ_پایان": jdate(c.end_date),
+      "مبلغ_خالص_سالانه": rialText(yearNet), "مبلغ_ماهانه": rialText(monthly), "سقف_قطعات": cap ? rialText(cap) : "", "کسر_عدم_سرویس": rialText(c.missed_service_deduction_rial || 0),
+      "شماره_کارت": company.card_no ? `<bdi dir="ltr">${esc(groupCard(company.card_no))}</bdi>` : "", "بانک": esc(company.bank || ""), "صاحب_حساب": esc(company.account_holder || ""), "سال_همکاری": c.cooperation_year ? fa(c.cooperation_year) : "" };
+    const row = (label, f) => `<tr><td class="k">${label}</td>${elev.map((e) => `<td>${esc(fa(f(e) || "—"))}</td>`).join("")}</tr>`;
+    const tables = {
+      "[[جدول_مشخصات]]": `<table class="pp-spec"><thead><tr><th></th>${elev.map((e) => `<th>دستگاه ${fa(e.elevator_no)}${e.subscription_code ? ` · کد ${esc(fa(e.subscription_code))}` : ""}</th>`).join("")}</tr></thead><tbody>
+        ${row("نوع کاربری", (e) => e.usage_type)}${row("میزان ترافیک", (e) => e.traffic)}${row("تعداد توقف", (e) => (e.stops ? `${e.stops} توقف` : ""))}${row("ظرفیت", (e) => (e.capacity_persons ? `${e.capacity_persons} نفره` : ""))}
+        ${row("نوع موتور", (e) => e.motor_type)}${row("نوع درب کابین", (e) => e.cabin_door_type)}${row("نوع درب طبقات", (e) => e.landing_door_type)}${row("تابلو فرمان", (e) => e.controller_brand)}</tbody></table>`,
+      "[[جدول_مبلغ]]": `<table class="pp-money"><thead><tr><th>مبلغ خالص سالانه</th><th>مالیات و عوارض ${vat ? `(${fa(vat)}٪)` : ""}</th><th>جمع کل سالانه</th><th>قابل پرداخت ماهانه</th></tr></thead>
+        <tbody><tr><td>${num(yearNet)}</td><td>${vat ? num(vatAmt) : "معاف"}</td><td>${num(yearNet + vatAmt)}</td><td class="hl">${num(Math.round((yearNet + vatAmt) / months))}</td></tr></tbody></table><div class="pp-sub">مبالغ به ریال</div>` };
+    const blocks = contractBlocks(t.body, v, tables);
+    blocks.push(`<div class="pp-csign"><div><b>پیمانکار: ${v["شرکت"]}</b>${v["نماینده_شرکت"]} — مهر و امضا</div><div><b>کارفرما: ${v["کارفرما"]}</b>${v["نماینده_کارفرما"]} — مهر و امضا</div></div>`);
+    const codes = [...new Set(elev.map((e) => e.subscription_code).filter(Boolean))];
+    const head = `<div class="pp-ctitle"><div class="bis">بسمه تعالی</div><div class="ayah">یا أَیُّهَا الَّذینَ آمَنُوا أَوْفُوا بِالْعُقُود (مائده: ۱)</div><h1>${esc(t.title)}</h1></div>
+      <div class="pp-tags">${codes.length ? `<span class="pp-chip">کد اشتراک ${esc(fa(codes.join("، ")))}</span>` : ""}${c.cooperation_year ? `<span class="pp-chip y">سال‌های همکاری: ${fa(c.cooperation_year)} سال</span>` : ""}</div>`;
+    paginate(host, { no: k.doc_number, date: k.doc_issued_at ? jdateTz(k.doc_issued_at) : "", form: "PY-FO-PC-G08", rev: t.rev, issued: jdate(t.issued_on) }, company, head, blocks, { sign: true, draft: !k.doc_number });
+  }
+  async function printContract(id) {
+    const d = await contractPrintData(id);
+    if (!d.t) return toast("متن قرارداد تعریف نشده است");
+    const draft = !d.k.doc_number;
+    const ui = openPrint(`قرارداد ${fa(d.c.contract_code)}${draft ? " — پیش‌نویس" : ""}`, (host) => renderContract(host, d),
+      draft && can.changeContract() ? `<button class="btn ok small" data-pp="issue">صدور و گرفتن شماره</button>` : "");
+    const issue = ui.wrap.querySelector('[data-pp="issue"]');
+    if (issue) issue.addEventListener("click", () => {
+      if (!confirm("قرارداد صادر شود؟ شماره‌ی قرارداد (کد ۰۲) گرفته می‌شود و دیگر عوض نمی‌شود. چاپ‌های بعدی همین شماره را دارند.")) return;
+      issue.disabled = true;
+      rpc("issue_contract_document", { p_contract_id: id }).then(() => { ui.close(); toast("قرارداد صادر شد"); return printContract(id); })
+        .catch((er) => { issue.disabled = false; toast(er.message); });
+    });
+  }
+
+  /* template editor (CEO): every save is a new revision of PY-FO-PC-G08 (D-74) */
+  async function viewTemplates() {
+    const revs = await api("doc_templates?form_code=eq.PY-FO-PC-G08&select=id,rev,title,body,issued_on,change_note,created_at&order=rev.desc");
+    const cur = revs[0];
+    if (!cur) return shell("متن قرارداد", "more", `<div class="card empty">متن قرارداد هنوز تعریف نشده است</div>`);
+    return shell("متن قرارداد", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
+      <div class="card" style="margin-top:8px"><div class="item-title">${esc(cur.title)} · <bdi dir="ltr">PY-FO-PC-G08 · Rev.${String(cur.rev).padStart(2, "0")}</bdi></div>
+        <div class="small muted">ابلاغ ${jdate(cur.issued_on)}${cur.change_note ? " · " + esc(cur.change_note) : ""}. قراردادهای صادرشده با همان نسخه‌ای که صادر شده‌اند چاپ می‌شوند؛ ذخیره‌ی متن جدید فقط روی قراردادهایی اثر دارد که از این به بعد صادر می‌شوند.</div></div>
+      <div class="card"><label>متن قرارداد</label><textarea id="tpl-body" class="tpl-body" spellcheck="false">${esc(cur.body)}</textarea>
+        <div class="hint">راهنما: خطی که با «# » شروع شود عنوان ماده است؛ «- » بند؛ خطی که با «تبصره ...:» شروع شود تبصره است. جدول‌ها و مقدارهای خودکار را با لمس اضافه کنید:</div>
+        <div class="chips tpl-keys">${CT_TABLES.map((x) => `<button type="button" data-act="tpl-key" data-k="${esc(x)}">${esc(x)}</button>`).join("")}${CT_KEYS.map((x) => `<button type="button" data-act="tpl-key" data-k="{${esc(x)}}">${esc(x.replace(/_/g, " "))}</button>`).join("")}</div>
+        <label>توضیح تغییر (برای شناسنامه)</label><input type="text" id="tpl-note" placeholder="مثلاً: اصلاح تبصره ۳">
+        <div class="actions"><button class="btn secondary" data-act="tpl-preview">پیش‌نمایش با نمونه</button><button class="btn" data-act="tpl-save">ذخیره به‌عنوان بازنگری Rev.${String(cur.rev + 1).padStart(2, "0")}</button></div></div>
+      <div class="section-title"><h2>تاریخچه‌ی بازنگری‌ها</h2></div>
+      ${revs.map((r) => `<div class="card"><div class="item-head"><div><div class="item-title"><bdi dir="ltr">Rev.${String(r.rev).padStart(2, "0")}</bdi> · ابلاغ ${jdate(r.issued_on)}</div><div class="small muted">${esc(r.change_note || "—")}</div></div>
+        <button class="btn secondary small" data-act="tpl-view" data-id="${r.id}">مشاهده</button></div></div>`).join("")}`);
+  }
+  const SAMPLE_CONTRACT = () => ({
+    c: { contract_code: "نمونه", start_date: addDays(todayTehran(), 1), end_date: addDays(todayTehran(), 365), monthly_amount_rial: 8000000, missed_service_deduction_rial: 4000000,
+      cooperation_year: 3, vat_exempt: false, customer_name: "مجتمع مسکونی نمونه", manager_name: "آقای نمونه", manager_mobile: "09160000000" },
+    k: { doc_number: null, customers: { name: "مجتمع مسکونی نمونه", national_id: "0000000000", mobile: "09160000000", address: "اهواز، خیابان نمونه" }, buildings: { name: "مجتمع نمونه", address: "اهواز، خیابان نمونه" } },
+    elev: [{ elevator_no: 1, subscription_code: "000", stops: 6, capacity_persons: 6, usage_type: "مسکونی", traffic: "متوسط", motor_type: "گیربکس ۷.۵ کیلووات", cabin_door_type: "تلسکوپی", landing_door_type: "لولایی", controller_brand: "نمونه" }] });
+  async function previewTemplate(body, rev, issued) {
+    const company = await rpc("get_company_profile");
+    openPrint(`پیش‌نمایش متن قرارداد (داده‌ی نمونه)`, (host) => renderContract(host, { ...SAMPLE_CONTRACT(), company, t: { title: "قرارداد سرویس و نگهداری آسانسور", body, rev, issued_on: issued } }));
   }
 
   /* ------------------------------------------------------------------ router */
@@ -2076,6 +2251,7 @@
         case "close": html = isStaff() ? await viewMonthClose() : await viewDashboard(); break;
         case "renewals": html = can.changeContract() ? await viewRenewals() : await viewDashboard(); break;
         case "debts": html = can.recordPayment() ? await viewDebts() : await viewDashboard(); break;
+        case "templates": html = role() === "CEO" ? await viewTemplates() : await viewDashboard(); break;
         case "reports": html = role() === "CEO" ? await viewReports() : await viewDashboard(); break;
         case "dashboard": html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard(); break;
         default: html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard();
@@ -2113,6 +2289,21 @@
     if (act === "open-contract") location.hash = `#/contract/${id}`;
     if (act === "go") { if (el.dataset.ff) faultFilter = el.dataset.ff; if (el.dataset.sf) serviceFilter = el.dataset.sf; const h = el.dataset.href.split("?"); if (h[1]) debtTab = h[1]; location.hash = h[0]; }
     if (act === "users-fold") usersOpen = !el.parentElement.open;
+    if (act === "print-contract") printContract(id).catch((er) => toast(er.message));
+    if (act === "tpl-key") {
+      const ta = document.getElementById("tpl-body"), k = el.dataset.k, block = k.startsWith("[[");
+      const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a, ins = block ? `\n${k}\n` : k;
+      ta.value = ta.value.slice(0, a) + ins + ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a + ins.length;
+    }
+    if (act === "tpl-preview" || act === "tpl-view" || act === "tpl-save") {
+      api("doc_templates?form_code=eq.PY-FO-PC-G08&select=id,rev,body,issued_on&order=rev.desc").then((revs) => {
+        if (act === "tpl-view") { const r = revs.find((x) => x.id === id); return previewTemplate(r.body, r.rev, r.issued_on); }
+        const body = document.getElementById("tpl-body").value;
+        if (act === "tpl-preview") return previewTemplate(body, revs[0].rev + 1, todayTehran());
+        if (!confirm(`متن جدید به‌عنوان بازنگری Rev.${String(revs[0].rev + 1).padStart(2, "0")} ذخیره شود؟ قراردادهایی که از این به بعد صادر شوند با این متن چاپ می‌شوند.`)) return;
+        return rpc("save_doc_template", { p_form_code: "PY-FO-PC-G08", p_body: body, p_note: document.getElementById("tpl-note").value.trim() || null }).then((rv) => { toast(`بازنگری Rev.${String(rv).padStart(2, "0")} ذخیره شد`); route(); });
+      }).catch((er) => toast(er.message));
+    }
     if (act === "debt-tab") { debtTab = el.dataset.k; route(); }
     if (act === "terminate") sheetTerminate(id).catch((er) => toast(er.message));
     if (act === "vat-exempt") {

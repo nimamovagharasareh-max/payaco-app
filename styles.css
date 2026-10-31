@@ -534,3 +534,9 @@ a.nima-credit { text-decoration: none; }
 .doc-sum .row { padding: 3px 0; }
 @media print { .doc-page .screen-doc .pp-page { zoom: 1 !important; } }
 .screen-doc .pp-page { pointer-events: none; }
+
+/* monthly archive (D-92): offscreen render stage and progress bar */
+.pp-stage { position: fixed; top: 0; left: -12000px; width: 820px; pointer-events: none; }
+.pp-stage .pp-pages { --z: 1; }
+.progress { height: 8px; background: var(--line); border-radius: 6px; overflow: hidden; margin-top: 6px; }
+.progress > div { height: 100%; width: 0; background: var(--brand, #2e8b3d); transition: width .2s; }

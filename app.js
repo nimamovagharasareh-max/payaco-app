@@ -932,6 +932,121 @@
     const rem = await rpc("get_invoice_document", { p_invoice_id: invId }).then((d) => Number(d.remaining) || 0).catch(() => 0);
     return sheetPayment(i.contract_id, invId, rem);
   }
+
+  /* item 17 (D-92): monthly archive — every document issued in a Jalali month, one PDF each, in folders by subscription code,
+     built on the device (iPhone included) and saved locally; no server needed to open it later. */
+  const loadScript = (src) => new Promise((ok, bad) => { if (document.querySelector(`script[src="${src}"]`)) return ok();
+    const t = document.createElement("script"); t.src = src; t.onload = ok; t.onerror = () => bad(new Error("بارگذاری ابزار ساخت فایل ناموفق بود")); document.head.appendChild(t); });
+  function jpegPdf(pages) { // pages: [{ bytes: Uint8Array (JPEG), w, h }] -> one A4 page per image
+    const enc = new TextEncoder(), parts = [], offs = []; let len = 0;
+    const put = (x) => { const b = typeof x === "string" ? enc.encode(x) : x; parts.push(b); len += b.length; };
+    const obj = (n, body, stream) => { offs[n] = len; put(`${n} 0 obj\n${body}\n`); if (stream) { put("stream\n"); put(stream); put("\nendstream\n"); } put("endobj\n"); };
+    put("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+    const W = 595.28, H = 841.89, n = pages.length, kids = pages.map((_, i) => `${3 + i * 3} 0 R`).join(" ");
+    obj(1, "<< /Type /Catalog /Pages 2 0 R >>"); obj(2, `<< /Type /Pages /Kids [${kids}] /Count ${n} >>`);
+    pages.forEach((pg, i) => {
+      const po = 3 + i * 3, co = po + 1, im = po + 2, cs = enc.encode(`q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`);
+      obj(po, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 ${im} 0 R >> >> /Contents ${co} 0 R >>`);
+      obj(co, `<< /Length ${cs.length} >>`, cs);
+      obj(im, `<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.bytes.length} >>`, pg.bytes);
+    });
+    const total = 3 + n * 3, xref = len;
+    put(`xref\n0 ${total}\n0000000000 65535 f \n`); for (let i = 1; i < total; i++) put(`${String(offs[i]).padStart(10, "0")} 00000 n \n`);
+    put(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+    const out = new Uint8Array(len); let o = 0; for (const b of parts) { out.set(b, o); o += b.length; } return out;
+  }
+  const safeName = (x) => String(x || "").replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 80);
+  async function pagesToPdf(host) {
+    const out = [];
+    for (const pg of host.querySelectorAll(".pp-page")) {
+      const opt = { pixelRatio: 1.6, quality: 0.82, backgroundColor: "#ffffff", cacheBust: false };
+      if (!pagesToPdf.warm) { await htmlToImage.toJpeg(pg, opt).catch(() => null); pagesToPdf.warm = true; } // Safari draws images on the second pass
+      const url = await htmlToImage.toJpeg(pg, opt);
+      const bin = atob(url.slice(url.indexOf(",") + 1)), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const img = await new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = url; });
+      out.push({ bytes, w: img.naturalWidth, h: img.naturalHeight });
+    }
+    if (!out.length) throw new Error("صفحه‌ای ساخته نشد");
+    return jpegPdf(out);
+  }
+  async function buildMonthArchive(jy, jm, progress, isCancelled) {
+    await Promise.all([loadScript("vendor/jszip.min.js"), loadScript("vendor/html-to-image.js")]);
+    const g1 = j2g(jy, jm, 1), g2 = jm === 12 ? j2g(jy + 1, 1, 1) : j2g(jy, jm + 1, 1);
+    const from = `${g1.gy}-${pad(g1.gm)}-${pad(g1.gd)}`, to = `${g2.gy}-${pad(g2.gm)}-${pad(g2.gd)}`; // [from, to)
+    const tsFrom = new Date(`${from}T00:00:00+03:30`).toISOString(), tsTo = new Date(`${to}T00:00:00+03:30`).toISOString();
+    const [invs, pfs, cts] = await Promise.all([
+      api(`invoices?issue_date=gte.${from}&issue_date=lt.${to}&status=neq.draft&document_type=not.in.(opening_balance,balance_transfer)&select=id,document_type,document_number,issue_date,total_rial,status,contracts(contract_code,subscription_code,buildings(name))&order=issue_date,id`),
+      api(`proformas?issued_at=gte.${tsFrom}&issued_at=lt.${tsTo}&select=id,document_number,issued_at,total_rial,status,contracts(contract_code,subscription_code,buildings(name))&order=issued_at,id`),
+      api(`contracts?doc_issued_at=gte.${tsFrom}&doc_issued_at=lt.${tsTo}&select=id,doc_number,doc_issued_at,contract_code,subscription_code,buildings(name)&order=doc_issued_at,id`)]);
+    const jobs = [
+      ...cts.map((c) => ({ kind: "contract", id: c.id, no: c.doc_number, date: c.doc_issued_at, sub: c.subscription_code, code: c.contract_code, bname: c.buildings && c.buildings.name, label: "قرارداد", status: "صادرشده", total: null })),
+      ...pfs.map((p) => ({ kind: "proforma", id: p.id, no: p.document_number, date: p.issued_at, sub: p.contracts && p.contracts.subscription_code, code: p.contracts && p.contracts.contract_code, bname: p.contracts && p.contracts.buildings && p.contracts.buildings.name, label: "پیش‌فاکتور", status: (PF_STATUS[p.status] || [p.status])[0], total: p.total_rial })),
+      ...invs.map((i) => ({ kind: "invoice", id: i.id, no: i.document_number, date: i.issue_date, sub: i.contracts && i.contracts.subscription_code, code: i.contracts && i.contracts.contract_code, bname: i.contracts && i.contracts.buildings && i.contracts.buildings.name, label: DOC_TYPE[i.document_type] || i.document_type, status: (INVOICE_STATUS[i.status] || [i.status])[0], total: i.total_rial }))];
+    if (!jobs.length) throw new Error(`در ${MONTHS[jm - 1]} ${fa(jy)} سندی صادر نشده است`);
+    const zip = new JSZip(), root = `Payaco-${jy}-${pad(jm)}`, rows = [], failed = [];
+    const stage = document.createElement("div"); stage.className = "pp-stage";
+    stage.innerHTML = `<div class="pp-pages" style="--z:1"></div>`; document.body.appendChild(stage);
+    const host = stage.firstChild;
+    try {
+      for (let k = 0; k < jobs.length; k++) {
+        if (isCancelled()) throw new Error("لغو شد");
+        const j = jobs[k]; progress(k, jobs.length, j);
+        const folder = `${root}/${safeName((j.sub || j.code || "بدون-کد") + (j.bname ? " - " + j.bname : ""))}`;
+        const file = `${safeName(j.label)} ${safeName(toEn(j.no || String(j.id)))}.pdf`;
+        try {
+          host.innerHTML = "";
+          if (j.kind === "contract") renderContract(host, await contractPrintData(j.id));
+          else if (j.kind === "proforma") renderProformaPages(host, await rpc("get_proforma", { p_id: j.id }));
+          else renderInvoicePages(host, await rpc("get_invoice_document", { p_invoice_id: j.id }));
+          await (document.fonts ? document.fonts.ready : Promise.resolve());
+          zip.file(`${folder}/${file}`, await pagesToPdf(host));
+          rows.push([j.sub, j.code, j.bname, j.label, toEn(j.no || ""), jdLatin(j.date), j.total === null ? "" : tom(j.total), j.status, `${folder.slice(root.length + 1)}/${file}`]);
+        } catch (er) { failed.push(`${j.label} ${toEn(j.no || j.id)}: ${er.message}`); rows.push([j.sub, j.code, j.bname, j.label, toEn(j.no || ""), jdLatin(j.date), j.total === null ? "" : tom(j.total), j.status, "ساخته نشد: " + er.message]); }
+      }
+    } finally { stage.remove(); }
+    const csv = "﻿" + [["کد اشتراک", "کد قرارداد", "ساختمان", "نوع سند", "شماره", "تاریخ", "مبلغ (تومان)", "وضعیت", "فایل"], ...rows]
+      .map((r) => r.map((x) => `"${String(x === null || x === undefined ? "" : x).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    zip.file(`${root}/فهرست اسناد.csv`, csv);
+    progress(jobs.length, jobs.length, null);
+    const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+    return { blob, name: `${root}.zip`, count: jobs.length - failed.length, failed };
+  }
+  async function saveBlob(blob, name) {
+    const file = new File([blob], name, { type: "application/zip" });
+    if (navigator.canShare && navigator.share && /iPhone|iPad|Android/i.test(navigator.userAgent) && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: name }); return "share"; } catch (er) { if (er && er.name === "AbortError") return "abort"; }
+    }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); return "download";
+  }
+  function sheetMonthArchive() {
+    const t = toEn(todayTehran()).split("-").map(Number), tj = g2j(t[0], t[1], t[2]);
+    const py = tj.jm === 1 ? tj.jy - 1 : tj.jy, pm = tj.jm === 1 ? 12 : tj.jm - 1;
+    sheet(`<h3>بایگانی ماهانه‌ی اسناد (ZIP)</h3>
+      <div class="hint">همه‌ی اسناد صادرشده‌ی ماه (قرارداد، پیش‌فاکتور، فاکتور تعمیر و بیمه، صورتحساب) هر کدام یک PDF، در پوشه‌ی کد اشتراک، به‌همراه فهرست اکسل. فایل روی همین دستگاه ساخته و ذخیره می‌شود؛ در آیفون «Save to Files» را بزنید.</div>
+      <div class="row"><select data-field="m">${MONTHS.map((m, i) => `<option value="${i + 1}" ${i + 1 === pm ? "selected" : ""}>${m}</option>`).join("")}</select>
+        <select data-field="y">${[py - 1, py, py + 1].filter((y) => y <= tj.jy).map((y) => `<option value="${y}" ${y === py ? "selected" : ""}>${fa(y)}</option>`).join("")}</select></div>
+      <div data-field="prog" class="small muted" style="margin-top:8px"></div><div class="progress" hidden><div></div></div>
+      <div class="actions"><button class="btn" data-act="go">ساخت و ذخیره</button><button class="btn secondary" data-close>بستن</button></div>`,
+    (el) => {
+      let cancelled = false, busy = false;
+      el.querySelector("[data-close]").addEventListener("click", () => { cancelled = true; });
+      const prog = el.querySelector('[data-field="prog"]'), bar = el.querySelector(".progress"), btn = el.querySelector('[data-act="go"]');
+      btn.addEventListener("click", async () => {
+        if (busy) return; busy = true; btn.disabled = true; cancelled = false; bar.hidden = false;
+        const jy = Number(el.querySelector('[data-field="y"]').value), jm = Number(el.querySelector('[data-field="m"]').value);
+        try {
+          prog.textContent = "در حال آماده‌سازی…";
+          const r = await buildMonthArchive(jy, jm, (k, n, j) => { bar.firstChild.style.width = `${Math.round((k / n) * 100)}%`;
+            prog.textContent = j ? `سند ${fa(k + 1)} از ${fa(n)}: ${j.label} ${fa(j.no || "")}` : "در حال بستن فایل ZIP…"; }, () => cancelled);
+          const how = await saveBlob(r.blob, r.name);
+          prog.innerHTML = `${how === "abort" ? "ذخیره لغو شد." : `فایل <bdi dir="ltr">${esc(r.name)}</bdi> با ${fa(r.count)} سند آماده شد (${fa((r.blob.size / 1048576).toFixed(1))} مگابایت).`}${r.failed.length ? `<div class="debt">${fa(r.failed.length)} سند ساخته نشد: ${r.failed.map(esc).join("؛ ")}</div>` : ""}`;
+        } catch (er) { prog.innerHTML = `<span class="debt">${esc(er.message)}</span>`; }
+        busy = false; btn.disabled = false;
+      });
+    });
+  }
+
   /* item 15 (D-91): paper signature cycle of an issued contract — the system only records the steps */
   function signatureCard(id, h, files) {
     const step = (done, label, when, btn) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><div class="spacer"><div>${done ? "✅" : "⬜️"} ${label}</div>${when ? `<div class="small muted">${when}</div>` : ""}</div>${btn || ""}</div>`;
@@ -2492,7 +2607,8 @@
           <div class="small muted">${DOC_TYPE[docsTab]} <bdi dir="ltr">${esc(fa(i.document_number || ""))}</bdi> · قرارداد ${esc(fa(c.contract_code || ""))} · ${jdate(i.issue_date)}</div></div>
           <div style="text-align:left">${money(i.total_rial)}${badge(INVOICE_STATUS, i.status)}</div></div></div>`; });
     }
-    const quick = canDocs() ? `<div class="row"><button class="btn" data-act="new-proforma">+ پیش‌فاکتور</button><button class="btn secondary" data-act="new-invoice">+ فاکتور</button></div><div style="height:8px"></div>` : "";
+    const quick = (canDocs() ? `<div class="row"><button class="btn" data-act="new-proforma">+ پیش‌فاکتور</button><button class="btn secondary" data-act="new-invoice">+ فاکتور</button></div><div style="height:8px"></div>` : "")
+      + (can.changeContract() ? `<div class="row"><button class="btn secondary" data-act="month-archive">بایگانی ماهانه (ZIP)</button></div><div style="height:8px"></div>` : "");
     return shell("اسناد", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a><div style="height:8px"></div>${quick}
       <div class="chips">${tabs.map(([k, l]) => `<button data-act="docs-tab" data-k="${k}" class="${docsTab === k ? "on" : ""}">${l}</button>`).join("")}</div>
       ${list.length ? list.join("") : `<div class="card empty">سندی نیست</div>`}`);
@@ -2880,6 +2996,7 @@
       route();
     }
     if (act === "report-csv") reportCsv();
+    if (act === "month-archive") sheetMonthArchive();
     if (act === "sign-step") signStep(Number(el.dataset.id), el.dataset.step).catch((er) => toast(er.message));
     if (act === "ins-new") sheetInsurance({ elevatorId: Number(el.dataset.e), contractId: Number(el.dataset.c), fromId: el.dataset.last ? Number(el.dataset.last) : null }).catch((er) => toast(er.message));
     if (act === "ins-edit") sheetInsurance({ id: Number(el.dataset.id), contractId: Number(el.dataset.c) }).catch((er) => toast(er.message));

@@ -755,7 +755,8 @@
     }
     const statusBtns = [];
     if ((can.manageFaults() || isTech) && ["reported", "assigned"].includes(f.status)) statusBtns.push(`<button class="btn small" data-act="status" data-s="in_progress">شروع تعمیر</button>`);
-    if (isTech && f.status === "in_progress") statusBtns.push(`<button class="btn ok small" data-act="status" data-s="repaired">رفع شد</button>`);
+    // D-87: a fault is marked repaired regardless of any invoice; the office decides about invoicing separately
+    if ((isTech && f.status === "in_progress") || (can.manageFaults() && ["reported", "assigned", "in_progress"].includes(f.status))) statusBtns.push(`<button class="btn ok small" data-act="fixed">رفع شد</button>`);
     if (can.manageFaults() && f.status === "repaired") statusBtns.push(`<button class="btn secondary small" data-act="status" data-s="closed">بستن پرونده</button>`);
     if (can.manageFaults() && ["reported", "assigned"].includes(f.status)) statusBtns.push(`<button class="btn secondary small" data-act="status" data-s="cancelled">لغو</button>`);
     let rateHtml = "";
@@ -765,16 +766,7 @@
         <div class="actions"><button class="btn small" data-act="rate-repair">${mine ? "به‌روزرسانی امتیاز" : "ثبت امتیاز"}</button></div></div>`;
     }
     let repairHtml = "";
-    if (repair && repair.status !== "completed" && repair.status !== "cancelled" && isStaff()) {
-      repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">تکمیل تعمیر</div>
-        <label>شرح کار انجام‌شده</label><textarea data-field="rdesc">${esc(repair.description || "")}</textarea>
-        ${amountFieldHtml("labor", "دستمزد")}${amountFieldHtml("parts", "قطعات")}
-        <div class="hint">مبالغ فقط برای سابقه‌ی تعمیر است؛ فاکتور با دکمه‌ی «صدور فاکتور» جداگانه صادر می‌شود.</div>
-        <div class="actions"><button class="btn ok" data-act="complete-repair">تکمیل تعمیر</button></div></div>`;
-    } else if (repair && repair.status === "completed") {
-      repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">تعمیر تکمیل شده</div>
-        <div class="small">مبلغ: ${money(Number(repair.labor_cost_rial) + Number(repair.parts_cost_rial))}</div></div>`;
-    }
+    if (f.repair_description) repairHtml = `<div class="card" style="margin-top:12px"><div class="item-title">کار انجام‌شده</div><div class="small">${txt(f.repair_description)}</div></div>`;
     sheet(`<h3>${esc(b.name || "خرابی")}</h3>
       <div class="row">${badge(PRIORITY, f.priority)} ${badge(FAULT_STATUS, f.status)}</div>
       <p>${esc(f.fault_description || "")}</p>
@@ -796,7 +788,6 @@
       ${canDocs() && f.contract_id ? `<div class="actions"><button class="btn secondary small" data-act="fault-proforma">پیش‌فاکتور این خرابی</button><button class="btn secondary small" data-act="fault-invoice">صدور فاکتور این خرابی</button></div>` : ""}${rateHtml}
       <div class="actions"><button class="btn secondary" data-close>بستن</button></div>`,
     (el, close) => {
-      if (el.querySelector('[data-amount="labor"]')) { bindAmount(el, "labor"); bindAmount(el, "parts"); }
       bindStars(el);
       el.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-act]"); if (!btn) return;
@@ -824,21 +815,22 @@
           await api(`faults?id=eq.${id}`, { method: "PATCH", body: { status: btn.dataset.s } });
           close(); toast("وضعیت به‌روز شد"); route();
         });
-        if (act === "complete-repair") guarded(btn, async () => {
-          const labor = readAmount(el, "labor"), parts = readAmount(el, "parts");
-          if (!labor.rial && !parts.rial && !confirm("مبلغ تعمیر صفر است. ادامه می‌دهید؟")) return;
-          await api(`repairs?id=eq.${repair.id}`, { method: "PATCH", body: { labor_cost_rial: labor.rial, parts_cost_rial: parts.rial, description: el.querySelector('[data-field="rdesc"]').value.trim() || null } });
-          await api(`repairs?id=eq.${repair.id}`, { method: "PATCH", body: { status: "completed", repair_end: new Date().toISOString() } });
-          if (["in_progress", "assigned"].includes(f.status)) await api(`faults?id=eq.${id}`, { method: "PATCH", body: { status: "repaired" } });
-          close(); toast("تعمیر تکمیل شد");
-          // D-85: at completion the office decides whether anything must be invoiced
-          const pend = (fpf || []).filter((q) => q.status === "approved" && !q.invoice_id), invoiced = (fpf || []).some((q) => q.invoice_id) || repair.invoice_id;
-          if (pend.length && canDocs()) {
-            if (confirm(`پیش‌فاکتور ${fa(pend[0].document_number)} تأیید شده ولی هنوز فاکتور نشده. اگر مشتری پرداخت کرده، فاکتور صادر شود؟`)) {
-              const inv = await rpc("invoice_from_proforma", { p_id: pend[0].id }); toast("فاکتور صادر شد"); location.hash = `#/doc/${inv}`; return;
+        if (act === "fixed") guarded(btn, async () => {
+          const what = prompt("شرح کار انجام‌شده (اختیاری):", f.repair_description || "");
+          if (what === null) return;
+          await api(`faults?id=eq.${id}`, { method: "PATCH", body: { status: "repaired", repair_description: what.trim() || f.repair_description || null } });
+          if (repair && !["completed", "cancelled"].includes(repair.status) && isStaff())
+            await api(`repairs?id=eq.${repair.id}`, { method: "PATCH", body: { status: "completed", repair_end: new Date().toISOString(), description: what.trim() || repair.description } }).catch(() => {});
+          close(); toast("خرابی رفع شد");
+          // D-85/D-87: invoicing is a separate, optional step
+          if (canDocs()) {
+            const pend = (fpf || []).filter((q) => q.status === "approved" && !q.invoice_id);
+            if (pend.length && confirm(`پیش‌فاکتور ${fa(pend[0].document_number)} تأیید شده ولی هنوز فاکتور نشده. اگر مشتری پرداخت کرده، فاکتور صادر شود؟`)) {
+              const inv = await rpc("invoice_from_proforma", { p_id: pend[0].id }); toast("فاکتور صادر شد"); payOffer = inv; location.hash = `#/doc/${inv}`; return;
             }
-          } else if (!invoiced && canDocs() && confirm("آیا برای این تعمیر چیزی باید فاکتور شود؟")) {
-            sheetDoc("invoice", { contractId: f.contract_id, faultId: id }).catch((er) => toast(er.message)); return;
+            if (!pend.length && !(fpf || []).some((q) => q.invoice_id) && confirm("خرابی رفع شد. آیا برای آن چیزی باید فاکتور شود؟ (اگر نه، «Cancel» را بزنید)")) {
+              sheetDoc("invoice", { contractId: f.contract_id, faultId: id }).catch((er) => toast(er.message)); return;
+            }
           }
           route();
         });
@@ -913,10 +905,15 @@
     });
   }
 
-  async function sheetPayment(contractId) {
+  async function sheetPaymentForInvoice(invId) {
+    const [i] = await api(`invoices?id=eq.${invId}&select=contract_id`);
+    const rem = await rpc("get_invoice_document", { p_invoice_id: invId }).then((d) => Number(d.remaining) || 0).catch(() => 0);
+    return sheetPayment(i.contract_id, invId, rem);
+  }
+  async function sheetPayment(contractId, preInvoiceId, preRial) {
     const invoices = await api(`invoices?contract_id=eq.${contractId}&status=not.in.(cancelled,draft)&total_rial=gt.0&select=id,document_number,document_type,total_rial,status,issue_date&order=issue_date.desc,id.desc`);
     sheet(`<h3>ثبت دریافت وجه</h3>
-      <label>بابت سند</label><select data-field="inv">${invoices.map((i) => `<option value="${i.id}">${esc(fa(i.document_number || "بدون شماره"))} · ${DOC_TYPE[i.document_type] || ""} · ${(INVOICE_STATUS[i.status] || [i.status])[0]}</option>`).join("")}</select>
+      <label>بابت سند</label><select data-field="inv">${invoices.map((i) => `<option value="${i.id}" ${i.id === preInvoiceId ? "selected" : ""}>${esc(fa(i.document_number || "بدون شماره"))} · ${DOC_TYPE[i.document_type] || ""} · ${(INVOICE_STATUS[i.status] || [i.status])[0]}</option>`).join("")}</select>
       <div class="hint">دریافتِ فاکتور تعمیر فقط همان فاکتور را تسویه می‌کند؛ دریافتِ صورتحساب سرویس از قدیمی‌ترین بدهی سرویس کم می‌شود. اضافه پرداخت بستانکار می‌ماند.</div>
       ${amountFieldHtml("amt", "مبلغ دریافتی")}
       <label>تاریخ دریافت</label>${datePickerHtml("pdate")}
@@ -926,6 +923,7 @@
       <div class="actions"><button class="btn ok" data-act="save">ثبت دریافت</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       bindAmount(el, "amt");
+      if (preRial > 0) { const inp = el.querySelector('[data-amount="amt"]'); inp.value = String(Math.round(preRial / 10)); inp.dispatchEvent(new Event("input")); }
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const a = readAmount(el, "amt");
         if (!a.value) throw new Error("مبلغ را وارد کنید");
@@ -1912,6 +1910,7 @@
   function docActions(d, pub) {
     const a = [pub ? `<button class="btn" data-act="doc-print">چاپ / ذخیره PDF</button>` : `<button class="btn" data-act="inv-print" data-id="${d.id}">چاپ روی سربرگ / PDF</button>`];
     if (!pub && d.token) a.push(`<button class="btn secondary" data-act="doc-share" data-token="${esc(d.token)}" data-no="${esc(d.number || "")}">ارسال لینک برای مشترک</button>`);
+    if (!pub && can.recordPayment() && ["issued", "partially_paid"].includes(d.status)) a.splice(1, 0, `<button class="btn ok" data-act="doc-pay" data-id="${d.id}">ثبت دریافت وجه</button>`);
     if (!pub && can.recordPayment() && d.status !== "cancelled") a.push(`<button class="btn secondary" data-act="doc-sms" data-id="${d.id}">ارسال پیامک</button>`);
     const open = ["issued", "partially_paid"].includes(d.status);
     if (pub && open) a.push(`<button class="btn ok" data-act="pub-claim">اعلام پرداخت</button>`);
@@ -2306,7 +2305,7 @@
         const t = docTotalsPreview(items, p.discount_rial, p.vat_exempt);
         if (!pf && !confirm(`فاکتور به مبلغ ${num(Math.round(t.total / 10))} تومان صادر و در حساب مشترک ثبت شود؟`)) return;
         if (pf) { const id = await rpc("save_proforma", { p_id: ed ? ed.id : null, p }); close(); toast(ed ? "پیش‌فاکتور ویرایش شد" : "پیش‌فاکتور صادر شد"); location.hash = `#/proforma/${id}`; if (ed) route(); }
-        else { const id = await rpc("create_repair_invoice_manual", { p }); close(); toast("فاکتور صادر شد"); location.hash = `#/doc/${id}`; }
+        else { const id = await rpc("create_repair_invoice_manual", { p }); close(); toast("فاکتور صادر شد"); payOffer = id; location.hash = `#/doc/${id}`; }
       }));
     });
   }
@@ -2520,6 +2519,7 @@
     };
     inp.value = listQuery[pg] || ""; inp.addEventListener("input", apply); apply();
   }
+  let payOffer = null; // invoice just issued: offer to record its payment once its page is shown
   const navStack = []; // in-app history, so «بازگشت» returns to the page the user came from
   async function route() {
     const pm = location.hash.match(/^#\/p\/([0-9a-fA-F-]{36})$/);
@@ -2585,6 +2585,10 @@
       }
       $app.innerHTML = html;
       if (SEARCH_PAGES.includes(page || def)) injectListSearch(page || def);
+      if (payOffer && page === "doc" && Number(arg) === payOffer) {
+        const inv = payOffer; payOffer = null;
+        if (can.recordPayment()) setTimeout(() => { if (confirm("فاکتور صادر شد. اگر مشتری پرداخت کرده، دریافت وجه همین حالا ثبت شود؟")) sheetPaymentForInvoice(inv).catch((er) => toast(er.message)); }, 300);
+      }
       const s = document.getElementById("csearch");
       if (s) { s.addEventListener("input", () => { contractSearch = s.value; applyContractSearch(); }); applyContractSearch(); }
     } catch (e) {
@@ -2626,12 +2630,13 @@
     if (act === "new-invoice") sheetDoc("invoice", { contractId: id || null }).catch((er) => toast(er.message));
     if (act === "docs-tab") { docsTab = el.dataset.k; route(); }
     if (act === "inv-print") printInvoiceDoc(id).catch((er) => toast(er.message));
+    if (act === "doc-pay") sheetPaymentForInvoice(id).catch((er) => toast(er.message));
     if (act === "pf-print") printProforma(id).catch((er) => toast(er.message));
     if (act === "period-statement") sheetPeriodStatement(id);
     if (act === "pf-edit") rpc("get_proforma", { p_id: id }).then((p) => sheetDoc("proforma", { edit: p })).catch((er) => toast(er.message));
     if (act === "pf-approve") rpc("get_proforma", { p_id: id }).then((p) => sheetApproveProforma(p, () => { toast("پیش‌فاکتور تأیید شد"); route(); })).catch((er) => toast(er.message));
-    if (act === "pf-invoice" && confirm("مشتری پرداخت کرده و فاکتور ردیف‌های تأییدشده صادر شود؟ فاکتور در حساب مشترک ثبت می‌شود و بعد می‌توانید دریافت وجه را روی آن ثبت کنید."))
-      rpc("invoice_from_proforma", { p_id: id }).then((inv) => { toast("فاکتور صادر شد"); location.hash = `#/doc/${inv}`; }).catch((er) => toast(er.message));
+    if (act === "pf-invoice" && confirm("فاکتور ردیف‌های تأییدشده صادر و در حساب مشترک ثبت شود؟ بعد از صدور، دریافت وجه را همان‌جا ثبت می‌کنید."))
+      rpc("invoice_from_proforma", { p_id: id }).then((inv) => { toast("فاکتور صادر شد"); payOffer = inv; location.hash = `#/doc/${inv}`; }).catch((er) => toast(er.message));
     if (act === "pf-reject") { const note = prompt("دلیل رد از طرف کارفرما:"); if (note !== null) rpc("decide_proforma", { p_id: id, p_approve: false, p_note: note.trim() || null }).then(() => { toast("رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "pf-cancel") { const note = prompt("دلیل لغو پیش‌فاکتور:"); if (note !== null) rpc("cancel_proforma", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "pf-share") {

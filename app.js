@@ -142,7 +142,7 @@
   const PRIORITY = { emergency: ["اضطراری", "danger"], high: ["بالا", "warn"], normal: ["عادی", ""], low: ["کم", ""] };
   const SERVICE_STATUS = { scheduled: ["برنامه‌ریزی", ""], completed: ["انجام‌شده", "info"], pending_confirmation: ["منتظر تأیید", "warn"], confirmed: ["تأییدشده", "ok"], rejected: ["ردشده", "danger"], missed: ["انجام‌نشده", "danger"], cancelled: ["لغو", ""] };
   const INVOICE_STATUS = { draft: ["پیش‌نویس", ""], issued: ["پرداخت‌نشده", "warn"], partially_paid: ["پرداخت ناقص", "info"], paid: ["پرداخت‌شده", "ok"], cancelled: ["ابطال‌شده", ""] };
-  const DOC_TYPE = { statement: "صورتحساب سرویس", repair_invoice: "فاکتور تعمیر", proforma: "پیش‌فاکتور", final_invoice: "فاکتور نهایی",
+  const DOC_TYPE = { statement: "صورتحساب سرویس", repair_invoice: "فاکتور تعمیر", insurance_invoice: "فاکتور بیمه", proforma: "پیش‌فاکتور", final_invoice: "فاکتور نهایی",
     opening_balance: "سند افتتاحیه (داخلی)", balance_transfer: "انتقال مانده (داخلی)" };
   const INTERNAL_DOC = ["opening_balance", "balance_transfer"];
   const METHOD = { bank_transfer: "انتقال بانکی", card: "کارت", cash: "نقد", cheque: "چک", other: "سایر" };
@@ -377,6 +377,14 @@
           <div class="small muted">${[r.overdue.length ? `${fa(r.overdue.length)} تمام‌شده و تمدیدنشده` : "", r.thisMonth.length ? `${fa(r.thisMonth.length)} پایان در همین ماه` : "", r.nextMonth.length ? `${fa(r.nextMonth.length)} پایان در ${MONTHS[r.nextJm - 1]}` : ""].filter(Boolean).join(" · ")}</div></div>`;
       } catch (e) { /* reminder only */ }
     }
+    if (isStaff()) {
+      try { // D-90: insurance policies ending within 30 days or expired in the last 90 days
+        const ir = await rpc("insurance_reminders");
+        if (ir.length) closeNote += `<div class="card" style="border-color:var(--warn)"><div class="item-title">یادآوری تمدید بیمه‌نامه (${fa(ir.length)})</div>
+          ${ir.slice(0, 6).map((x) => `<div class="small tap" data-act="go" data-href="#/contract/${x.contract_id}" style="padding:4px 0">${esc(x.building_name || "")} · اشتراک ${esc(fa(x.subscription_code))} · ${esc(x.insurer)} · ${x.days_left < 0 ? `<span class="debt">${fa(-x.days_left)} روز است تمام شده</span>` : x.days_left === 0 ? "امروز تمام می‌شود" : `${fa(x.days_left)} روز مانده`}</div>`).join("")}
+          ${ir.length > 6 ? `<div class="small muted">و ${fa(ir.length - 6)} مورد دیگر</div>` : ""}</div>`;
+      } catch (e) { /* reminder only */ }
+    }
     if (can.recordPayment()) {
       try {
         const pc = await api("payment_claims?status=eq.pending&select=id");
@@ -581,6 +589,7 @@
     }
     if (role() === "CEO" && ["active", "draft"].includes(c.status)) actions.push(`<button class="btn danger" data-act="terminate" data-id="${id}">فسخ قرارداد</button>`);
     const missing = isStaff() ? await rpc("contract_missing_fields", { p_contract_id: id }).catch(() => []) : [];
+    const insHtml = isStaff() ? await insuranceSection(id).catch(() => "") : "";
     const draftCard = c.status === "draft" ? `<div class="card" style="border-color:var(--warn)"><div class="item-title">قرارداد جدید منتظر تأیید مدیرعامل</div>
       <div class="small muted">تا تأیید نشود سرویس و صورتحساب نمی‌گیرد.</div>
       ${role() === "CEO" ? `<div class="actions"><button class="btn ok small" data-act="approve-contract" data-id="${id}">تأیید قرارداد</button><button class="btn danger small" data-act="reject-contract" data-id="${id}">رد</button></div>` : ""}</div>` : "";
@@ -608,6 +617,7 @@
         ${c.terminated_at ? `<dt>فسخ</dt><dd class="debt">${jdate(c.terminated_at)}${c.termination_reason ? " · " + esc(c.termination_reason) : ""}</dd>` : ""}</dl>
         <div class="actions">${actions.join("")}</div></div>
 
+      ${insHtml}
       <div class="section-title"><h2>فایل‌های قرارداد</h2>${isStaff() ? `<button class="btn small secondary" data-act="attach" data-id="${id}">+ پیوست</button>` : ""}</div>
       ${files.length ? `<div class="card">${files.map((f) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><div class="spacer"><div>${esc(FILE_TYPE[f.document_type] || f.document_type)}${f.change_request_id && changes.find((k) => k.id === f.change_request_id && k.document_number) ? ` <bdi dir="ltr">${esc(fa(changes.find((k) => k.id === f.change_request_id).document_number))}</bdi>` : ""}</div>
         <div class="small muted">${esc(f.file_name)} · ${jtime(f.uploaded_at)}${f.notes ? " · " + esc(f.notes) : ""}</div></div>
@@ -910,6 +920,61 @@
     const rem = await rpc("get_invoice_document", { p_invoice_id: invId }).then((d) => Number(d.remaining) || 0).catch(() => 0);
     return sheetPayment(i.contract_id, invId, rem);
   }
+  /* item 13 (D-90): insurance policy per elevator; history follows the subscription code across renewals */
+  async function insuranceSection(contractId) {
+    const elev = await api(`elevators?contract_id=eq.${contractId}&is_active=eq.true&select=id,elevator_no,subscription_code&order=elevator_no`);
+    if (!elev.length) return "";
+    const subs = elev.map((e) => e.subscription_code).filter(Boolean);
+    const list = subs.length ? await api(`elevator_insurances?subscription_code=in.(${subs.map((x) => `"${encodeURIComponent(x)}"`).join(",")})&select=id,elevator_id,subscription_code,insurer,policy_number,start_date,end_date,amount_rial,invoice_id,notes,invoices(document_number,status)&order=end_date.desc`) : [];
+    const today = todayTehran();
+    const card = (e) => {
+      const mine = list.filter((x) => x.subscription_code === e.subscription_code), last = mine[0];
+      const left = last ? Math.round((new Date(last.end_date) - new Date(today)) / 86400000) : null;
+      const state = !last ? `<span class="badge">بیمه ثبت نشده</span>` : left < 0 ? `<span class="badge danger">منقضی</span>` : left <= 30 ? `<span class="badge warn">${fa(left)} روز مانده</span>` : `<span class="badge ok">معتبر</span>`;
+      return `<div class="card"><div class="item-head"><div><div class="item-title">دستگاه ${fa(e.elevator_no || 1)}${e.subscription_code ? " · اشتراک " + esc(fa(e.subscription_code)) : ""}</div></div>${state}</div>
+        ${mine.map((x) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><div class="spacer"><div>${esc(x.insurer)}${x.policy_number ? ` · <bdi dir="ltr">${esc(fa(x.policy_number))}</bdi>` : ""}</div>
+          <div class="small muted">${jdate(x.start_date)} تا ${jdate(x.end_date)}${x.amount_rial ? " · " + num(tom(x.amount_rial)) + " تومان" : ""}${x.invoice_id && x.invoices && x.invoices.status !== "cancelled" ? ` · فاکتور <a href="#/doc/${x.invoice_id}"><bdi dir="ltr">${esc(fa(x.invoices.document_number || ""))}</bdi></a>` : ""}</div></div>
+          ${can.changeContract() ? `<button class="btn secondary small" data-act="ins-edit" data-id="${x.id}" data-c="${contractId}">ویرایش</button>` : ""}</div>`).join("")}
+        ${can.changeContract() ? `<div class="actions"><button class="btn secondary small" data-act="ins-new" data-e="${e.id}" data-c="${contractId}" data-last="${last ? last.id : ""}">+ بیمه‌نامه${last ? " (تمدید)" : ""}</button></div>` : ""}</div>`;
+    };
+    return `<div class="section-title"><h2>بیمه‌نامه‌ها</h2></div>${elev.map(card).join("")}`;
+  }
+  async function sheetInsurance({ elevatorId, contractId, id, fromId }) {
+    const [cur] = id ? await api(`elevator_insurances?id=eq.${id}&select=*,invoices(status,document_number)`) : [null];
+    const [prev] = !id && fromId ? await api(`elevator_insurances?id=eq.${fromId}&select=insurer,end_date,amount_rial`) : [null];
+    const hasInv = cur && cur.invoice_id && cur.invoices && cur.invoices.status !== "cancelled";
+    const addDay = (d, n) => { const x = new Date(d + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    const start = cur ? cur.start_date : prev ? addDay(prev.end_date, 1) : todayTehran();
+    const yearLater = (d) => { const [y, m, dd] = d.split("-").map(Number), j = g2j(y, m, dd), g = j2g(j.jy + 1, j.jm, Math.min(j.jd, j.jm <= 6 ? 31 : 30)); return addDay(`${g.gy}-${pad(g.gm)}-${pad(g.gd)}`, -1); };
+    const end = cur ? cur.end_date : yearLater(start);
+    sheet(`<h3>${cur ? "ویرایش بیمه‌نامه" : "ثبت بیمه‌نامه"}</h3>
+      <label>بیمه‌گر</label><input type="text" data-field="insurer" value="${esc(cur ? cur.insurer : prev ? prev.insurer : "")}" placeholder="نام شرکت بیمه">
+      <label>شماره بیمه‌نامه</label><input type="text" data-field="pno" class="ltr" value="${esc(cur && cur.policy_number || "")}">
+      <label>شروع</label>${datePickerHtml("istart", start)}<label>پایان</label>${datePickerHtml("iend", end)}
+      ${amountFieldHtml("iamt", "مبلغ بیمه برای مشترک (ارزش افزوده اضافه نمی‌شود)")}
+      ${hasInv ? `<div class="hint">فاکتور <bdi dir="ltr">${esc(fa(cur.invoices.document_number || ""))}</bdi> صادر شده؛ برای تغییر مبلغ اول فاکتور را ابطال کنید.</div>` : `<label class="check"><input type="checkbox" data-field="issue" ${cur ? "" : "checked"}> صدور فاکتور بیمه برای مشترک</label>`}
+      <label>توضیحات</label><input type="text" data-field="notes" value="${esc(cur && cur.notes || "")}">
+      <div class="actions"><button class="btn ok" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      bindAmount(el, "iamt");
+      const amt0 = cur ? cur.amount_rial : prev ? prev.amount_rial : null;
+      if (amt0) { const inp = el.querySelector('[data-amount="iamt"]'); inp.value = String(Math.round(amt0 / 10)); inp.dispatchEvent(new Event("input")); }
+      if (hasInv) el.querySelector('[data-amount="iamt"]').disabled = true;
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const a = readAmount(el, "iamt"), issue = !hasInv && el.querySelector('[data-field="issue"]').checked;
+        const rial = hasInv ? cur.amount_rial : (a.value ? a.rial : null);
+        if (issue && !rial) throw new Error("برای صدور فاکتور مبلغ را وارد کنید");
+        if (issue && !confirm(`فاکتور بیمه به مبلغ ${num(Math.round(rial / 10))} تومان برای مشترک صادر شود؟`)) return;
+        const r = await rpc("save_insurance", { p_id: id || null, p: { elevator_id: elevatorId, insurer: el.querySelector('[data-field="insurer"]').value.trim(),
+          policy_number: toEn(el.querySelector('[data-field="pno"]').value.trim()), start_date: readDate(el, "istart"), end_date: readDate(el, "iend"),
+          amount_rial: rial, notes: el.querySelector('[data-field="notes"]').value.trim(), issue_invoice: issue } });
+        close();
+        if (r.invoice_id) { toast("بیمه‌نامه ثبت و فاکتور صادر شد"); payOffer = r.invoice_id; location.hash = `#/doc/${r.invoice_id}`; }
+        else { toast("بیمه‌نامه ذخیره شد"); route(); }
+      }));
+    });
+  }
+
   async function sheetPayment(contractId, preInvoiceId, preRial) {
     const invoices = await api(`invoices?contract_id=eq.${contractId}&status=not.in.(cancelled,draft)&total_rial=gt.0&select=id,document_number,document_type,total_rial,status,issue_date&order=issue_date.desc,id.desc`);
     sheet(`<h3>ثبت دریافت وجه</h3>
@@ -1897,7 +1962,7 @@
   }
   window.__payacoWords = numWords;
 
-  const DOC_TITLE = { statement: "صورتحساب سرویس و نگهداری", repair_invoice: "فاکتور تعمیرات", proforma: "پیش‌فاکتور", final_invoice: "فاکتور" };
+  const DOC_TITLE = { statement: "صورتحساب سرویس و نگهداری", repair_invoice: "فاکتور تعمیرات", insurance_invoice: "فاکتور بیمه‌ی آسانسور", proforma: "پیش‌فاکتور", final_invoice: "فاکتور" };
   const docLink = (token) => `${location.origin}${location.pathname}#/p/${token}`;
   const rial = (n) => `${num(n)}`;
   // bank numbers stay in English digits: some banking apps reject Persian digits when pasted
@@ -2365,7 +2430,7 @@
 
   let docsTab = "proforma";
   async function viewDocs() {
-    const tabs = [["proforma", "پیش‌فاکتورها"], ["repair_invoice", "فاکتورها"], ["statement", "صورتحساب‌ها"]];
+    const tabs = [["proforma", "پیش‌فاکتورها"], ["repair_invoice", "فاکتورها"], ["insurance_invoice", "بیمه"], ["statement", "صورتحساب‌ها"]];
     let list;
     if (docsTab === "proforma") {
       const rows = await api("proformas?select=id,document_number,status,total_rial,issued_at,valid_until,subject,contract_id,contracts(contract_code,buildings(name))&order=id.desc&limit=300");
@@ -2498,13 +2563,14 @@
       : `<tr><td class="c">${fa(k + 1)}</td><td>${txt(it.description)}</td><td class="c">${fa(Number(it.qty))}</td><td class="c">${esc(it.unit || "")}</td><td class="n">${num(it.unit_price)}</td><td class="n">${num(it.amount)}</td></tr>`).join("");
     const itemsSum = items.reduce((a, x) => a + (x.dc === "credit" ? -1 : 1) * Number(x.amount), 0);
     const bal = Number(d.account_balance || 0);
-    const head = `<div class="pp-title"><h1>${st ? "صورتحساب سرویس و نگهداری" : "فاکتور تعمیرات"}${d.proforma_number ? `<small>بر اساس پیش‌فاکتور ${esc(fa(d.proforma_number))}</small>` : ""}</h1><span class="pp-chip">کد اشتراک ${esc(fa((d.contract && d.contract.subscription) || ""))}</span></div><div class="pp-rule"></div>
+    const ins = d.type === "insurance_invoice";
+    const head = `<div class="pp-title"><h1>${st ? "صورتحساب سرویس و نگهداری" : ins ? "فاکتور بیمه‌ی آسانسور" : "فاکتور تعمیرات"}${d.proforma_number ? `<small>بر اساس پیش‌فاکتور ${esc(fa(d.proforma_number))}</small>` : ""}</h1><span class="pp-chip">کد اشتراک ${esc(fa((d.contract && d.contract.subscription) || ""))}</span></div><div class="pp-rule"></div>
       ${ppInfo([[["مشترک", esc((d.building && d.building.name) || (d.customer && d.customer.name) || "")], ["شماره قرارداد", esc(fa((d.contract && d.contract.code) || ""))]], ...(d.building && d.building.address ? [[["نشانی", esc(fa(d.building.address))]]] : [])])}`;
     const sums = [["جمع", num(itemsSum)], ...(Number(d.discount) ? [["تخفیف", "−" + num(d.discount)]] : []), ...(tax ? [["مالیات بر ارزش افزوده", num(tax)]] : d.vat_exempt ? [["مالیات بر ارزش افزوده", "معاف"]] : []),
       ["مبلغ این " + (st ? "صورتحساب" : "فاکتور"), num(d.total), "s"], ...(Number(d.previous_balance) ? [["مانده‌ی حساب پیش از این سند" + (Number(d.previous_balance) < 0 ? " (بستانکار)" : ""), num(Math.abs(d.previous_balance))]] : []),
       [bal < 0 ? "مانده‌ی بستانکاری شما" : "مبلغ قابل پرداخت (مانده‌ی فعلی حساب)", num(Math.abs(bal)), "pay"]];
     const code = d.public_token ? "" : "";
-    paginate(host, { no: d.number, date: jdate(d.issue_date), form: st ? "PY-FO-PC-G04" : "PY-FO-PC-G06", rev: 0, issued: "۱۴۰۵/۰۸/۰۹" }, c, head, [
+    paginate(host, { no: d.number, date: jdate(d.issue_date), form: st ? "PY-FO-PC-G04" : ins ? "PY-FO-PC-G09" : "PY-FO-PC-G06", rev: 0, issued: "۱۴۰۵/۰۸/۰۹" }, c, head, [
       (st ? tbl([["ردیف", "9mm"], ["شرح"], ["مبلغ (ریال)", "34mm"]], rows) : tbl([["ردیف", "9mm"], ["شرح کالا / خدمات"], ["تعداد", "14mm"], ["واحد", "14mm"], ["فی (ریال)", "26mm"], ["مبلغ (ریال)", "28mm"]], rows)) + sumTbl(sums),
       bal > 0 ? `<div class="pp-words">به حروف: <b>${numWords(bal)} ریال</b> (معادل ${num(Math.round(bal / 10))} تومان)</div>` : "",
       `<div class="pp-cols">${ppBank(c)}<div class="pp-box"><h3>اعلام واریز آنلاین</h3><div class="small">پس از واریز، از لینکی که برایتان پیامک شده شماره پیگیری را اعلام کنید.</div></div></div>`,
@@ -2767,6 +2833,8 @@
       route();
     }
     if (act === "report-csv") reportCsv();
+    if (act === "ins-new") sheetInsurance({ elevatorId: Number(el.dataset.e), contractId: Number(el.dataset.c), fromId: el.dataset.last ? Number(el.dataset.last) : null }).catch((er) => toast(er.message));
+    if (act === "ins-edit") sheetInsurance({ id: Number(el.dataset.id), contractId: Number(el.dataset.c) }).catch((er) => toast(er.message));
     if (act === "contract-report") sheetContractReport(id).catch((er) => toast(er.message));
     if (act === "attach") sheetAttach(id).catch((er) => toast(er.message));
     if (act === "open-file") openFile(el.dataset.path);

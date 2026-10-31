@@ -413,3 +413,14 @@ body.busy::before { content: ""; position: fixed; top: 0; right: 0; left: 0; hei
   animation: busybar 1s linear infinite; }
 @keyframes busybar { from { background-position: -50% 0; } to { background-position: 150% 0; } }
 @media (prefers-reduced-motion: reduce) { body.busy::before { animation: none; background: var(--brand); } }
+
+/* v2.24: clickable tiles, folding sections, checkbox rows */
+.tap { cursor: pointer; }
+.stat.tap:active, .floor-ind.tap:active { transform: scale(.98); }
+.stat.tap:hover { box-shadow: 0 0 0 2px var(--line); }
+details.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: "◂"; color: var(--muted); transition: transform .15s; }
+details.fold[open] > summary::before { transform: rotate(-90deg); }
+label.check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-weight: 500; }
+label.check input { width: 20px; height: 20px; flex: none; }

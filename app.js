@@ -2235,7 +2235,7 @@
   }
   window.__payacoWords = numWords;
 
-  const DOC_TITLE = { statement: "صورتحساب سرویس و نگهداری", repair_invoice: "فاکتور تعمیرات", insurance_invoice: "فاکتور بیمه‌ی آسانسور", proforma: "پیش‌فاکتور", final_invoice: "فاکتور" };
+  const DOC_TITLE = { opening_balance: "صورت‌حساب مانده‌ی حساب", statement: "صورتحساب سرویس و نگهداری", repair_invoice: "فاکتور تعمیرات", insurance_invoice: "فاکتور بیمه‌ی آسانسور", proforma: "پیش‌فاکتور", final_invoice: "فاکتور" };
   const docLink = (token) => `${location.origin}${location.pathname}#/p/${token}`;
   const rial = (n) => `${num(n)}`;
   // bank numbers stay in English digits: some banking apps reject Persian digits when pasted
@@ -2245,7 +2245,7 @@
     const c = d.company || {};
     const items = d.items || [];
     const paid = (d.payments || []).reduce((a, p) => a + Number(p.amount), 0);
-    const bal = Number(d.account_balance || 0), st = d.type === "statement";
+    const bal = Number(d.account_balance || 0), st = d.type === "statement" || d.type === "opening_balance"; // opening balance link (debt reminder) asks for the whole account
     const invRem = d.status === "cancelled" ? 0 : Math.max(Number(d.remaining ?? (Number(d.total) - paid)), 0), other = bal - invRem;
     const payable = st ? Math.max(bal, 0) : invRem; // D-93
     const copyBtn = (val, label) => `<button type="button" class="doc-copy no-print" data-act="copy" data-val="${esc(val)}" aria-label="کپی ${esc(label)}">کپی</button>`;
@@ -2892,7 +2892,7 @@
       `<div class="pp-signs"><div><b>تأیید کارفرما</b>با شرح و مبلغ بالا موافقم. نام، تاریخ و امضا</div><div><b>پایاکو</b>مهر و امضا</div></div>`], {});
   }
   function renderInvoicePages(host, d) {
-    const c = d.company || {}, st = d.type === "statement";
+    const c = d.company || {}, st = d.type === "statement" || d.type === "opening_balance";
     const items = (d.items || []).filter((it) => it.type !== "tax"), tax = (d.items || []).filter((it) => it.type === "tax").reduce((a, x) => a + Number(x.amount), 0);
     const rows = items.map((it, k) => st ? `<tr><td class="c">${fa(k + 1)}</td><td>${txt(it.description)}</td><td class="n">${it.dc === "credit" ? "−" : ""}${num(it.amount)}</td></tr>`
       : `<tr><td class="c">${fa(k + 1)}</td><td>${txt(it.description)}</td><td class="c">${fa(Number(it.qty))}</td><td class="c">${esc(it.unit || "")}</td><td class="n">${num(it.unit_price)}</td><td class="n">${num(it.amount)}</td></tr>`).join("");
@@ -2902,7 +2902,7 @@
     // D-93: an invoice asks only for its own amount; the rest of the account is shown beside it, never added to it
     const invPaid = (d.payments || []).reduce((a, p) => a + Number(p.amount), 0), invRem = d.status === "cancelled" ? 0 : Math.max(Number(d.remaining ?? (Number(d.total) - invPaid)), 0);
     const other = bal - invRem, payNow = st ? bal : invRem;
-    const head = `<div class="pp-title"><h1>${st ? "صورتحساب سرویس و نگهداری" : ins ? "فاکتور بیمه‌ی آسانسور" : "فاکتور تعمیرات"}${d.proforma_number ? `<small>بر اساس پیش‌فاکتور ${esc(fa(d.proforma_number))}</small>` : ""}</h1><span class="pp-chip">کد اشتراک ${esc(fa((d.contract && d.contract.subscription) || ""))}</span></div><div class="pp-rule"></div>
+    const head = `<div class="pp-title"><h1>${d.type === "opening_balance" ? "صورت‌حساب مانده‌ی حساب" : st ? "صورتحساب سرویس و نگهداری" : ins ? "فاکتور بیمه‌ی آسانسور" : "فاکتور تعمیرات"}${d.proforma_number ? `<small>بر اساس پیش‌فاکتور ${esc(fa(d.proforma_number))}</small>` : ""}</h1><span class="pp-chip">کد اشتراک ${esc(fa((d.contract && d.contract.subscription) || ""))}</span></div><div class="pp-rule"></div>
       ${ppInfo([[["مشترک", esc((d.building && d.building.name) || (d.customer && d.customer.name) || "")], ["شماره قرارداد", esc(fa((d.contract && d.contract.code) || ""))]], ...(d.building && d.building.address ? [[["نشانی", esc(fa(d.building.address))]]] : [])])}`;
     const sums = [["جمع", num(itemsSum)], ...(Number(d.discount) ? [["تخفیف", "−" + num(d.discount)]] : []), ...(tax ? [["مالیات بر ارزش افزوده", num(tax)]] : d.vat_exempt ? [["مالیات بر ارزش افزوده", "معاف"]] : []),
       ["مبلغ این " + (st ? "صورتحساب" : "فاکتور"), num(d.total), "s"],

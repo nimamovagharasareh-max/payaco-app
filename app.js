@@ -1977,6 +1977,7 @@
       if (a.lat != null) acts.push(navButtons(a.lat, a.lng));
       else if (!a.loc_pending) acts.push(`<button class="btn secondary small" data-act="send-location" data-bid="${a.building_id}">ثبت موقعیت ساختمان</button>`);
     } else if (a.status === "planned") {
+      acts.push(`<button class="btn secondary small" data-act="assignment-note" data-id="${a.id}" data-note="${esc(a.note || "")}">${a.note ? "ویرایش کار اضافه" : "+ کار اضافه"}</button>`);
       acts.push(`<button class="btn secondary small" data-act="cancel-assignment" data-id="${a.id}">لغو ارجاع</button>`);
     }
     const st = a.status === "done" ? `<span class="badge ok">ثبت شد</span>` : a.status === "cancelled" ? `<span class="badge">لغو شده</span>` : late ? `<span class="badge danger">عقب‌افتاده</span>` : `<span class="badge info">${dayLabel(a.planned_date)}</span>`;
@@ -1984,7 +1985,7 @@
       <div class="item-title">${esc(a.building_name || "")}</div>
       <div class="small muted">${[forTech ? jdate(a.planned_date) : "", esc(a.address || "")].filter(Boolean).join(" · ")}</div></div></div>${st}</div>
       ${a.manager_mobile && forTech ? `<div class="small">مدیر ساختمان: ${esc(a.manager_name || "")} <a href="tel:${esc(toEn(a.manager_mobile))}" class="ltr">${esc(fa(a.manager_mobile))}</a></div>` : ""}
-      ${a.note ? `<div class="small muted">${txt(a.note)}</div>` : ""}
+      ${a.note ? `<div class="assign-note"><b>کار اضافه:</b> ${txt(a.note)}</div>` : ""}
       ${forTech && a.lat == null && a.loc_pending ? `<div class="small muted">موقعیت ساختمان ثبت شده و منتظر تأیید مدیر تعمیرات است.</div>` : ""}
       ${acts.length ? `<div class="actions">${acts.join("")}</div>` : ""}</div>`;
   }
@@ -2021,28 +2022,45 @@
       <label>روز سرویس</label>${datePickerHtml("adate", planDate || addDays(todayTehran(), 1))}
       <label>ساختمان‌ها <span class="small muted" data-field="cnt"></span></label>
       <input type="search" data-field="q" placeholder="جست‌وجوی ساختمان، کد یا آدرس">
-      <div class="pick-list" data-field="list">${targets.map((t) => `<label class="pick" data-s="${esc(toEn(t.building_name + " " + t.contract_code + " " + (t.address || "")))}"><input type="checkbox" value="${t.contract_id}">
-        <span><b>${esc(fa(t.contract_code))}</b> — ${esc(t.building_name)}<br><span class="small muted">${esc(t.address || "")}</span></span></label>`).join("")}</div>
-      <label>توضیح برای سرویس‌کار</label><input type="text" data-field="note" placeholder="اختیاری">
+      <div class="pick-list" data-field="list">${targets.map((t) => `<div class="pick-wrap" data-s="${esc(toEn(t.building_name + " " + t.contract_code + " " + (t.address || "")))}"><label class="pick"><input type="checkbox" value="${t.contract_id}">
+        <span><b>${esc(fa(t.contract_code))}</b> — ${esc(t.building_name)}<br><span class="small muted">${esc(t.address || "")}</span></span></label>
+        <input type="text" class="pick-note" data-note="${t.contract_id}" placeholder="کار اضافه برای این کد (اختیاری)" hidden></div>`).join("")}</div>
+      <label>توضیح مشترک برای همه‌ی ارجاع‌ها</label><input type="text" data-field="note" placeholder="اختیاری">
       <div class="actions"><button class="btn" data-act="save">ارجاع</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       const cnt = () => { el.querySelector('[data-field="cnt"]').textContent = `(${fa(el.querySelectorAll(".pick input:checked").length)} انتخاب)`; };
-      el.querySelector('[data-field="list"]').addEventListener("change", cnt); cnt();
+      el.querySelector('[data-field="list"]').addEventListener("change", (e) => {
+        if (e.target.type === "checkbox") { const n = el.querySelector(`[data-note="${e.target.value}"]`); n.hidden = !e.target.checked; if (e.target.checked) n.focus(); }
+        cnt();
+      }); cnt();
       el.querySelector('[data-field="q"]').addEventListener("input", (e) => {
         const q = toEn(e.target.value).trim();
-        el.querySelectorAll(".pick").forEach((o) => { o.style.display = !q || o.dataset.s.includes(q) ? "" : "none"; });
+        el.querySelectorAll(".pick-wrap").forEach((o) => { o.style.display = !q || o.dataset.s.includes(q) || o.querySelector("input:checked") ? "" : "none"; });
       });
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const ids = [...el.querySelectorAll(".pick input:checked")].map((i) => Number(i.value));
         if (!ids.length) throw new Error("حداقل یک ساختمان انتخاب کنید");
-        const day = readDate(el, "adate"), tech = Number(el.querySelector('[data-field="tech"]').value), note = el.querySelector('[data-field="note"]').value.trim() || null;
+        const day = readDate(el, "adate"), tech = Number(el.querySelector('[data-field="tech"]').value), common = el.querySelector('[data-field="note"]').value.trim();
+        const noteFor = (cid) => [el.querySelector(`[data-note="${cid}"]`).value.trim(), common].filter(Boolean).join("\n") || null;
         try {
-          await api("service_assignments", { method: "POST", body: ids.map((cid) => ({ contract_id: cid, technician_id: tech, planned_date: day, note })) });
+          await api("service_assignments", { method: "POST", body: ids.map((cid) => ({ contract_id: cid, technician_id: tech, planned_date: day, note: noteFor(cid) })) });
         } catch (er) {
           if (/duplicate|unique|23505/i.test(er.message)) throw new Error("یکی از این ساختمان‌ها برای همین روز قبلاً ارجاع شده است");
           throw er;
         }
         planDate = day; close(); toast(`${fa(ids.length)} سرویس ارجاع شد`); location.hash = "#/plan"; route();
+      }));
+    });
+  }
+
+  function sheetAssignmentNote(id, cur) {
+    sheet(`<h3>کار اضافه برای سرویس‌کار</h3>
+      <label>توضیح (سرویس‌کار روی کارت همین ارجاع می‌بیند)</label><textarea data-field="note" rows="4" placeholder="مثلاً: روغن‌کاری ریل، بررسی صدای درب طبقه‌ی ۳">${esc(cur)}</textarea>
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        await api(`service_assignments?id=eq.${id}`, { method: "PATCH", body: { note: el.querySelector('[data-field="note"]').value.trim() || null, updated_at: new Date().toISOString() } });
+        close(); toast("توضیح ذخیره شد"); route();
       }));
     });
   }
@@ -2993,6 +3011,7 @@
     if (act === "new-assignment") sheetNewAssignment().catch((er) => toast(er.message));
     if (act === "plan-go") { planDate = readDate(document, "pday"); route(); }
     if (act === "plan-day") { planDate = addDays(readDate(document, "pday"), Number(el.dataset.d)); route(); }
+    if (act === "assignment-note") sheetAssignmentNote(Number(el.dataset.id), el.dataset.note || "");
     if (act === "cancel-assignment" && confirm("این ارجاع لغو شود؟")) api(`service_assignments?id=eq.${el.dataset.id}`, { method: "PATCH", body: { status: "cancelled", updated_at: new Date().toISOString() } }).then(() => { toast("ارجاع لغو شد"); route(); }).catch((er) => toast(er.message));
     if (act === "loc-decide") { const okd = el.dataset.ok === "1"; if (confirm(okd ? "این موقعیت تأیید شود؟" : "این موقعیت رد شود؟")) rpc("decide_building_location", { p_building_id: Number(el.dataset.id), p_approve: okd }).then(() => { toast(okd ? "موقعیت تأیید شد" : "موقعیت رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "go-reports") location.hash = "#/reports";

@@ -540,3 +540,7 @@ a.nima-credit { text-decoration: none; }
 .pp-stage .pp-pages { --z: 1; }
 .progress { height: 8px; background: var(--line); border-radius: 6px; overflow: hidden; margin-top: 6px; }
 .progress > div { height: 100%; width: 0; background: var(--brand, #2e8b3d); transition: width .2s; }
+
+/* per-code extra work on a service assignment (D-94) */
+.pick-wrap .pick-note { margin: 0 28px 8px 0; width: calc(100% - 28px); }
+.assign-note { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--warn, #e0a800) 14%, transparent); font-size: 13px; }

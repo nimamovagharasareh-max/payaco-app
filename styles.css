@@ -631,3 +631,20 @@ a.nima-credit { text-decoration: none; }
   .btn.secondary { background: linear-gradient(180deg, #22332e 0%, var(--surface-2) 100%); box-shadow: 0 2px 0 rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .06); }
   .stat { box-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
 }
+
+/* v2.37 (D-101 phase 2): one look for every list page — compact action row, back pill, amounts that never wrap */
+.page-actions { display: flex; gap: 8px; align-items: center; margin: 4px 0 12px; }
+.page-actions .btn { min-height: 44px; padding: 10px 18px; font-size: 14.5px; white-space: nowrap; flex: 0 0 auto; }
+@media (max-width: 1023px) {
+  .page-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 2px 16px 6px; }
+  .page-actions::-webkit-scrollbar { display: none; }
+}
+.dash-quick .btn { min-height: 44px; padding: 10px 18px; font-size: 14.5px; }
+a[data-act="back"] { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; margin-bottom: 8px; border-radius: 999px;
+  background: var(--surface); color: var(--brand); font-weight: 700; text-decoration: none; box-shadow: 0 1px 0 rgba(0, 0, 0, .06); }
+@media print { a[data-act="back"] { display: none; } }
+.item-head > div[style*="text-align:left"] { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.item-head > div[style*="text-align:left"] .amount { white-space: nowrap; }
+.chips { margin-bottom: 12px; }
+.section-title h2 { font-size: 16px; }
+.row.lsearch { margin-bottom: 12px; }

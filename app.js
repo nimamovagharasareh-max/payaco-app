@@ -524,8 +524,7 @@
     const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,needs_text,buildings(name)&order=reported_at.desc&limit=100${filters[faultFilter]}`);
     const chips = [["open", "باز"], ["emergency", "اضطراری"], ["all", "همه"]];
     return shell(role() === "TECHNICIAN" ? "کارهای من" : "خرابی‌ها", "faults", `
-      <div class="row">${can.reportFault() ? `<button class="btn" data-act="new-fault">+ ثبت خرابی</button>` : ""}</div>
-      <div style="height:10px"></div>
+      ${can.reportFault() ? `<div class="page-actions"><button class="btn" data-act="new-fault">+ ثبت خرابی</button></div>` : ""}
       <div class="chips">${chips.map(([k, l]) => `<button data-act="fault-filter" data-k="${k}" class="${faultFilter === k ? "on" : ""}">${l}</button>`).join("")}</div>
       ${list.length ? list.map(faultCard).join("") : `<div class="card empty">موردی نیست</div>`}`);
   }
@@ -539,7 +538,7 @@
     if (isStaff()) top.push(`<button class="btn" data-act="go-plan">برنامه و ارجاع سرویس</button>`, `<button class="btn secondary" data-act="new-service">+ گزارش سرویس</button>`);
     if (can.recordMissed()) top.push(`<button class="btn secondary" data-act="new-missed">ثبت سرویس انجام‌نشده</button>`);
     return shell("سرویس‌ها", "services", `
-      <div class="row">${top.join("")}</div><div style="height:10px"></div>
+      ${top.length ? `<div class="page-actions">${top.join("")}</div>` : ""}
       <div class="chips">${chips.map(([k, l]) => `<button data-act="service-filter" data-k="${k}" class="${serviceFilter === k ? "on" : ""}">${l}</button>`).join("")}</div>
       ${list.length ? list.map(serviceCard).join("") : `<div class="card empty">موردی نیست</div>`}`);
   }
@@ -583,7 +582,7 @@
       body = [...groups.entries()].map(([y, cs]) => `<div class="cgroup"><div class="section-title"><h2>قراردادهای سال ${y ? fa(y) : "نامشخص"} (${fa(cs.length)})</h2></div>${cs.map(card).join("")}</div>`).join("");
     } else body = shown.map(card).join("");
     return shell(isExternal() ? "صورتحساب‌ها" : "قراردادها", "contracts", `
-      ${can.changeContract() ? `<div class="row"><button class="btn" data-act="new-contract">+ قرارداد جدید</button></div><div style="height:8px"></div>` : ""}
+      ${can.changeContract() ? `<div class="page-actions"><button class="btn" data-act="new-contract">+ قرارداد جدید</button></div>` : ""}
       ${arc.length ? `<div class="chips"><button data-act="contract-tab" data-k="current" class="${contractTab === "current" ? "on" : ""}">جاری (${fa(cur.length)})</button><button data-act="contract-tab" data-k="archive" class="${contractTab === "archive" ? "on" : ""}">بایگانی (${fa(arc.length)})</button></div>` : ""}
       ${list.length > 3 ? `<div class="row"><input type="search" id="csearch" placeholder="جست‌وجو: کد قرارداد، ساختمان، مدیر ساختمان" value="${esc(contractSearch)}" style="flex:1"><button class="btn secondary small" data-act="csearch-clear" aria-label="پاک کردن جست‌وجو">پاک کن</button></div><div style="height:10px"></div>` : ""}
       ${body}<div class="card empty" id="cnone" style="display:none">قراردادی با این جست‌وجو پیدا نشد</div>
@@ -2004,7 +2003,7 @@
         <div class="actions"><button class="btn secondary small" data-act="edit-tech" data-id="${t.id}">ویرایش</button>
         ${role() === "CEO" && !t.user_id && t.status === "active" ? `<button class="btn small" data-act="tech-account" data-id="${t.id}">ساخت حساب ورود</button>` : ""}</div></div>`;
     return shell("سرویس‌کارها و تعمیرکارها", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
-      <div class="row" style="margin-top:8px"><button class="btn" data-act="new-tech">+ سرویس‌کار / تعمیرکار جدید</button></div>
+      <div class="page-actions"><button class="btn" data-act="new-tech">+ سرویس‌کار / تعمیرکار جدید</button></div>
       <div class="hint">امتیازها مربوط به ۹۰ روز اخیر است و فقط مدیرعامل و مدیر تعمیرات می‌بینند.</div>
       <div class="hint">همه در تمام مناطق کار می‌کنند. سرویس‌کار با حساب ورود، سرویس را خودش از گوشی ثبت می‌کند؛ تعمیرکار خرابی‌های ارجاع‌شده را می‌بیند.</div>
       ${act.map(card).join("") || `<div class="card empty">کسی تعریف نشده</div>`}
@@ -2109,7 +2108,7 @@
     return shell("برنامه سرویس", "services", `
       <div class="card"><label>روز برنامه</label>${datePickerHtml("pday", planDate)}
         <div class="actions"><button class="btn secondary small" data-act="plan-day" data-d="-1">روز قبل</button><button class="btn secondary small" data-act="plan-go">نمایش</button><button class="btn secondary small" data-act="plan-day" data-d="1">روز بعد</button></div></div>
-      <div class="row"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button>${byTech.size ? `<button class="btn secondary" data-act="plan-print">چاپ برنامه‌ی این روز</button>` : ""}</div>
+      <div class="page-actions"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button>${byTech.size ? `<button class="btn secondary" data-act="plan-print">چاپ برنامه‌ی این روز</button>` : ""}</div>
       <div class="section-title"><h2>${dayLabel(planDate)} · ${fa(rows.filter((a) => a.status !== "cancelled").length)} سرویس</h2></div>
       ${byTech.size ? [...byTech.entries()].map(([t, list]) => `<div class="section-title"><h2 class="small">${esc(t)} (${fa(list.length)})</h2></div>${list.map((a) => assignmentCard(a, false)).join("")}`).join("")
         : `<div class="card empty">برای این روز سرویسی ارجاع نشده است</div>`}`);
@@ -2759,9 +2758,10 @@
           <div class="small muted">${DOC_TYPE[docsTab]} <bdi dir="ltr">${esc(fa(i.document_number || ""))}</bdi> · قرارداد ${esc(fa(c.contract_code || ""))} · ${jdate(i.issue_date)}</div></div>
           <div style="text-align:left">${money(i.total_rial)}${badge(INVOICE_STATUS, i.status)}</div></div></div>`; });
     }
-    const quick = (canDocs() ? `<div class="row"><button class="btn" data-act="new-proforma">+ پیش‌فاکتور</button><button class="btn secondary" data-act="new-invoice">+ فاکتور</button></div><div style="height:8px"></div>` : "")
-      + (can.changeContract() ? `<div class="row"><button class="btn secondary" data-act="month-archive">بایگانی ماهانه (ZIP)</button></div><div style="height:8px"></div>` : "");
-    return shell("اسناد", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a><div style="height:8px"></div>${quick}
+    const qb = (canDocs() ? `<button class="btn" data-act="new-proforma">+ پیش‌فاکتور</button><button class="btn secondary" data-act="new-invoice">+ فاکتور</button>` : "")
+      + (can.changeContract() ? `<button class="btn secondary" data-act="month-archive">بایگانی ماهانه (ZIP)</button>` : "");
+    const quick = qb ? `<div class="page-actions">${qb}</div>` : "";
+    return shell("اسناد", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>${quick}
       <div class="chips">${tabs.map(([k, l]) => `<button data-act="docs-tab" data-k="${k}" class="${docsTab === k ? "on" : ""}">${l}</button>`).join("")}</div>
       ${list.length ? list.join("") : `<div class="card empty">سندی نیست</div>`}`);
   }
@@ -2999,7 +2999,7 @@
     if (cards().length < 2) return;
     const box = document.createElement("div"); box.className = "row lsearch";
     box.innerHTML = `<input type="search" id="lsearch" placeholder="جست‌وجو: کد یا نام ساختمان" style="flex:1"><button class="btn secondary small" data-act="lsearch-clear">پاک کن</button>`;
-    const anchor = v.querySelector(".chips") || v.querySelector(".row") || v.querySelector('[data-act="back"]');
+    const anchor = v.querySelector(".chips") || v.querySelector(".page-actions") || v.querySelector(".row") || v.querySelector('[data-act="back"]');
     if (anchor) anchor.after(box); else v.prepend(box);
     const inp = box.querySelector("input");
     const apply = () => {

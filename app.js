@@ -1485,8 +1485,16 @@
       <div class="actions"><button class="btn" data-act="save">${role() === "CEO" ? "تمدید" : "ارسال برای تأیید"}</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       bindAmount(el, "monthly"); bindAmount(el, "ded");
+      // the suggested code follows the chosen start year: <subscription>/<Jalali year of the new start>
+      const codeIn = el.querySelector('[data-field="code"]');
+      const autoCode = () => { const [y, mo, d] = readDate(el, "start").split("-").map(Number); return `${c.subscription_code}/${g2j(y, mo, d).jy}`; };
+      const syncCode = () => { codeIn.placeholder = autoCode(); };
+      el.querySelector('[data-date="start"]').addEventListener("change", syncCode); syncCode();
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const m = readAmount(el, "monthly"), dd = readAmount(el, "ded");
+        const newCode = toEn(codeIn.value.trim()) || autoCode();
+        const dup = await api(`contracts?contract_code=eq.${encodeURIComponent(newCode)}&select=id,contract_code`);
+        if (dup.length) throw new Error(`کد قرارداد «${fa(newCode)}» قبلاً برای قرارداد دیگری ثبت شده است. کد دیگری بنویسید${codeIn.value.trim() ? ` یا خانه را خالی بگذارید تا «${fa(autoCode())}» شود` : ""}.`);
         if (!m.value) throw new Error("مبلغ ماهانه قرارداد جدید را وارد کنید");
         if (!parseAmount(el.querySelector('[data-amount="ded"]').value) && !confirm("کسر سرویس انجام‌نشده صفر است. درست است؟")) return;
         const spm = Number(toEn(el.querySelector('[data-field="spm"]').value));

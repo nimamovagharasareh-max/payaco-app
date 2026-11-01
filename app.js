@@ -337,10 +337,6 @@
     <rect x="66.6" y="32.4" width="7.6" height="7.6" rx="1.3"/><rect x="75.6" y="32.4" width="7.6" height="7.6" rx="1.3"/>
     <path d="M68.2 38.4 H69.6 L72.4 34.6 H73"/><rect x="77.2" y="33.6" width="2.6" height="5.2" rx=".3"/><path d="M81.4 34 v4.4 M80.8 34.8 l.6-.8 .6 .8 M80.8 37.6 l.6 .8 .6-.8"/></g></svg>`;
   // the full yellow corner of the letterhead (shape + line-work + LIFT), for the login screen and the subscriber's document page
-  const BRAND_RIBBON = `<svg class="brand-ribbon" viewBox="0 0 118 48" aria-hidden="true">
-      <path d="M0 0 H78.9 L87.6 10.6 L85.6 14.4 L116 44.2 Q117.6 46 116.4 47.2 Q115.6 47.9 114 47.9 H71.4 L67 40.6 H0 Z" fill="#f2b51c"/>
-      ${BRAND_LINES.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, "").replace('stroke="currentColor"', 'stroke="#fff"')}
-      <text x="74.9" y="45.6" fill="#fff" font-size="2.6" font-weight="800" text-anchor="middle">LIFT</text></svg>`;
   function shell(title, current, body) {
     const p = state.profile;
     return `<header class="topbar"><div class="brand"><img src="icons/mark.png" alt="پایاکو" class="logo"><div><h1>${esc(title)}</h1>
@@ -356,7 +352,7 @@
   // designer credit shown on the login screen and the settings page
   const NIMA_CREDIT = `<${CFG.nimaUrl ? `a href="${CFG.nimaUrl}" target="_blank" rel="noopener"` : "div"} class="nima-credit"><picture><source srcset="icons/nima-mark-dark.png" media="(prefers-color-scheme: dark)"><img src="icons/nima-mark.png" alt="" width="21" height="16"></picture><span>طراحی و توسعه: <bdi class="nima-name">NiMa</bdi></span></${CFG.nimaUrl ? "a" : "div"}>`;
   function viewLogin(error) {
-    $app.innerHTML = `<div class="login-wrap">${BRAND_RIBBON}<form class="login-card" id="login">
+    $app.innerHTML = `<div class="login-wrap"><form class="login-card" id="login">
       <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="login-logo"><p class="muted small">سامانه‌ی جامع اتوماسیون اداری پایاکو</p>
       <label for="email">نام کاربری</label><input id="email" type="text" class="ltr" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       <label for="password">رمز عبور</label><input id="password" type="password" class="ltr" autocomplete="current-password" required>
@@ -2331,7 +2327,6 @@
         ${c.address ? `<div>${esc(fa(c.address))}</div>` : ""}
         ${c.footer_note ? `<div>${esc(c.footer_note)}</div>` : ""}
       </footer>
-      <div class="doc-brand-end">${BRAND_RIBBON}</div>
     </article>`;
   }
 

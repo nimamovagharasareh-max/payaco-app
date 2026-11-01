@@ -631,16 +631,3 @@ a.nima-credit { text-decoration: none; }
   .btn.secondary { background: linear-gradient(180deg, #22332e 0%, var(--surface-2) 100%); box-shadow: 0 2px 0 rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .06); }
   .stat { box-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
 }
-
-/* v2.36 (D-101 phase 2): the letterhead's yellow corner on the login screen and on the subscriber's document page */
-.login-wrap { position: relative; overflow: hidden; background: var(--bg); }
-.login-wrap > .brand-ribbon { position: absolute; top: 0; inset-inline-end: 0; width: min(78vw, 460px); height: auto; pointer-events: none; }
-.login-wrap > .login-card { position: relative; z-index: 1; }
-.doc { overflow: hidden; }
-
-/* v2.36.1: the yellow corner moved off the document header (it clashed with the logo and slogan) to its own row at the end */
-.doc-brand-end { display: flex; justify-content: flex-end; margin-top: 14px; }
-.doc-brand-end > .brand-ribbon { position: static; width: 42%; max-width: 220px; height: auto; }
-@media print { .doc-brand-end { display: none; } }
-.doc-brand-end { margin: 10px -20px -22px; }
-@media (max-width: 480px) { .doc-brand-end { margin: 10px -12px -16px; } }

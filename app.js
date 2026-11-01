@@ -2291,7 +2291,7 @@
     ].filter(Boolean).join("");
     return `<article class="doc" id="doc">
       ${d.status === "cancelled" ? `<div class="doc-void">ابطال‌شده</div>` : ""}
-      ${BRAND_RIBBON}<header class="doc-head">
+      <header class="doc-head">
         <img src="icons/logo.png" alt="پایاکو - آسانسور و پله‌برقی" class="doc-logo">
         <div class="doc-title"><h2>${esc(DOC_TITLE[d.type] || DOC_TYPE[d.type] || "سند")}</h2>
           <div>شماره: <bdi dir="ltr" class="doc-no">${esc(fa(d.number || "—"))}</bdi></div>
@@ -2331,6 +2331,7 @@
         ${c.address ? `<div>${esc(fa(c.address))}</div>` : ""}
         ${c.footer_note ? `<div>${esc(c.footer_note)}</div>` : ""}
       </footer>
+      <div class="doc-brand-end">${BRAND_RIBBON}</div>
     </article>`;
   }
 

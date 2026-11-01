@@ -699,8 +699,7 @@
     const locCard = ["BUILDING_MANAGER", "EMPLOYER"].includes(role()) ? `<div class="card"><div class="item-title">موقعیت ساختمان برای مسیریابی سرویس‌کار</div>
       <div class="small muted">داخل یا جلوی ساختمان دکمه را بزنید؛ پس از تأیید مدیر تعمیرات، سرویس‌کارها با یک لمس مسیریابی می‌کنند.</div>
       <div class="actions"><button class="btn secondary small" data-act="send-location" data-bid="${c.building_id}">ارسال موقعیت ساختمان</button></div></div>` : "";
-    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `${draftCard}${missCard}${locCard}
-      <a href="#/contracts" data-act="back" class="small">→ بازگشت</a>
+    return shell(`قرارداد ${fa(c.contract_code)}`, "contracts", `<a href="#/contracts" data-act="back" class="small">→ بازگشت</a>${draftCard}${missCard}${locCard}
       <div class="card" style="margin-top:8px"><div class="item-head"><div><div class="item-title">${esc(c.building_name || "")}</div>
         <div class="small muted">${esc(c.building_address || "")}</div>${c.cooperation_year ? `<div class="small"><span class="badge info">سال‌های همکاری: ${fa(c.cooperation_year)} سال</span></div>` : ""}</div><div style="text-align:left">${balanceBadge(c.balance_rial)}${c.status !== "active" ? `<div style="height:4px"></div>${badge(CONTRACT_STATUS, c.status)}` : ""}</div></div>
         ${next ? `<div class="small">تمدید شد: <a href="#/contract/${next.id}">قرارداد ${esc(fa(next.contract_code))}</a></div>` : ""}
@@ -732,10 +731,12 @@
         <div class="small muted">${DOC_TYPE[i.document_type] || i.document_type} · ${jdate(i.issue_date)}</div></div>
         <div style="text-align:left">${docAmount(i)}${INTERNAL_DOC.includes(i.document_type) && i.status !== "draft" && i.status !== "cancelled" ? `<span class="badge info">ثبت‌شده</span>` : badge(INVOICE_STATUS, i.status)}</div></div>
         ${(i.invoice_items || []).map((it) => `<div class="small">${txt(it.description)}</div>`).join("")}
-        ${!INTERNAL_DOC.includes(i.document_type) && i.status !== "draft" ? `<div class="actions"><a class="btn secondary small" href="#/doc/${i.id}">مشاهده، چاپ و لینک پرداخت</a></div>` : ""}
+
         ${i.status === "draft" && i.document_type === "opening_balance" && role() === "CEO" ? `<div class="actions"><button class="btn ok small" data-act="post-opening" data-id="${i.id}">تأیید و ثبت در حساب</button><button class="btn secondary small" data-act="opening" data-id="${id}">ویرایش</button></div>` : ""}
         ${i.opening_balance_rial ? `<div class="small muted">مانده قبل از این سند: ${num(Math.round(i.opening_balance_rial / 10))} تومان</div>` : ""}
-        ${can.cancelInvoice() && !["cancelled", "draft"].includes(i.status) && i.document_type !== "balance_transfer" ? `<div class="actions"><button class="btn secondary small" data-act="cancel-invoice" data-id="${i.id}" data-no="${esc(i.document_number || "")}">ابطال سند</button></div>` : ""}
+        ${(() => { const view = !INTERNAL_DOC.includes(i.document_type) && i.status !== "draft" ? `<a class="btn secondary small" href="#/doc/${i.id}">مشاهده، چاپ و لینک پرداخت</a>` : "";
+          const cancel = can.cancelInvoice() && !["cancelled", "draft"].includes(i.status) && i.document_type !== "balance_transfer" ? `<button class="btn secondary small danger-text" data-act="cancel-invoice" data-id="${i.id}" data-no="${esc(i.document_number || "")}">ابطال سند</button>` : "";
+          return view || cancel ? `<div class="actions">${view}${cancel}</div>` : ""; })()}
         </div>`).join("") : `<div class="card empty">سندی صادر نشده</div>`}
 
       <div class="section-title"><h2>گردش حساب</h2></div>

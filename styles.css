@@ -646,5 +646,11 @@ a[data-act="back"] { display: inline-flex; align-items: center; gap: 4px; paddin
 .item-head > div[style*="text-align:left"] { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .item-head > div[style*="text-align:left"] .amount { white-space: nowrap; }
 .chips { margin-bottom: 12px; }
-.section-title h2 { font-size: 16px; }
 .row.lsearch { margin-bottom: 12px; }
+.btn.secondary.danger-text { color: var(--danger); }
+/* page-level spacing: first block after the back pill, section titles and sheets share one rhythm */
+a[data-act="back"] + .card, a[data-act="back"] + div > .card:first-child { margin-top: 0; }
+.section-title { margin: 20px 0 8px; }
+.sheet h3 { font-size: 18px; margin: 0 0 12px; }
+.sheet .actions { margin-top: 14px; }
+.sheet .actions .btn:not(.small) { min-height: 46px; flex: 1 1 auto; }

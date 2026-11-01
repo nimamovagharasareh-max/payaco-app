@@ -398,7 +398,7 @@
           ${ir.length > 6 ? `<div class="small muted">و ${fa(ir.length - 6)} مورد دیگر</div>` : ""}</div>`;
       } catch (e) { /* reminder only */ }
     }
-    const waiting = await pendingForMe(d).catch(() => "");
+    const waiting = await pendingForMe().catch(() => "");
     const quick = [];
     if (can.reportFault()) quick.push(`<button class="btn" data-act="new-fault">+ ثبت خرابی</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="new-service">+ ثبت گزارش سرویس</button>`);
@@ -417,37 +417,53 @@
       ${urgent.length ? urgent.map(faultCard).join("") : `<div class="card empty">خرابی بازی وجود ندارد</div>`}`);
   }
 
-  /* D-95: everything someone sent that waits for this user's approval or action, in one card at the top of the dashboard */
-  async function pendingForMe(d) {
-    const r = role(), now = new Date().toISOString(), q = (p) => p.catch(() => null);
-    const n = (x) => (Array.isArray(x) ? x.length : 0);
+  /* D-95/D-97: everything someone sent that waits for this user's approval or action; summary card on the dashboard, full list at #/pending */
+  async function pendingGroups() {
+    const r = role(), now = new Date().toISOString(), q = (p) => p.catch(() => []);
+    const none = Promise.resolve([]);
+    const bld = "contracts(contract_code,buildings(name))";
     const [svc, chg, drafts, opening, claims, locs, pfWait, pfInv, needs, sign] = await Promise.all([
-      Promise.resolve(Number(d.pending_services) || 0),
-      r === "CEO" ? q(api("contract_change_requests?status=eq.pending&select=id")) : null,
-      r === "CEO" ? q(api("contracts?status=eq.draft&select=id")) : null,
-      r === "CEO" ? q(api("invoices?status=eq.draft&document_type=eq.opening_balance&select=id")) : null,
-      can.recordPayment() ? q(api("payment_claims?status=eq.pending&select=id")) : null,
-      ["CEO", "REPAIR_MANAGER"].includes(r) ? q(rpc("pending_building_locations")) : null,
-      r === "CEO" ? q(api(`proformas?status=eq.issued&valid_until=gt.${encodeURIComponent(now)}&select=id`)) : null,
-      canDocs() ? q(api("proformas?status=eq.approved&invoice_id=is.null&select=id")) : null,
-      canDocs() ? q(api("faults?needs_text=not.is.null&status=in.(reported,assigned,in_progress)&select=id,proformas(id,status)")) : null,
-      r === "CEO" ? q(api("contracts?doc_number=not.is.null&sign_ceo_at=is.null&status=in.(active,draft)&select=id")) : null]);
-    const needOpen = Array.isArray(needs) ? needs.filter((f) => !(f.proformas || []).some((p) => p.status !== "cancelled" && p.status !== "rejected")).length : 0;
-    const rows = [
-      [svc && (can.approveService()) ? svc : 0, "گزارش سرویس منتظر تأیید", "#/services", "pending"],
-      [n(chg), "درخواست تغییر قرارداد (الحاقیه، ویرایش، تمدید)", "#/requests"],
-      [n(drafts), "قرارداد جدید منتظر تأیید", "#/contracts"],
-      [n(opening), "مانده‌ی افتتاحیه‌ی پیش‌نویس", "#/opening"],
-      [n(claims), "اعلام پرداخت مشترک‌ها (بررسی حساب بانکی)", "#/claims"],
-      [n(locs), "موقعیت ساختمان ارسالی", "#/locations"],
-      [n(pfWait), "پیش‌فاکتور منتظر تأیید کارفرما / شما", "#/docs"],
-      [n(pfInv), "پیش‌فاکتور تأییدشده که هنوز فاکتور نشده", "#/docs"],
-      [needOpen, "اعلام نیاز تعمیرکار بدون پیش‌فاکتور", "#/faults"],
-      [n(sign), "قرارداد صادرشده منتظر امضای شما", "#/contracts"]].filter((x) => x[0] > 0);
-    if (!rows.length) return "";
-    const total = rows.reduce((a, x) => a + x[0], 0);
-    return `<div class="card pending-card"><div class="item-title">در انتظار تأیید یا اقدام شما (${fa(total)})</div>
-      ${rows.map(([c, label, href, sf]) => `<div class="row tap pending-row" data-act="go" data-href="${href}"${sf ? ` data-sf="${sf}"` : ""}><span class="spacer">${label}</span><span class="badge warn">${fa(c)}</span><span>←</span></div>`).join("")}</div>`;
+      can.approveService() ? q(api(`service_reports?status=eq.pending_confirmation&select=id,report_number,service_date,service_year,service_month,status,report_text,notes,rejection_note,contract_id,${bld}&order=service_date.desc,id.desc&limit=100`)) : none,
+      r === "CEO" ? q(api(`contract_change_requests?status=eq.pending&select=id,kind,requested_at,contract_id,contracts!contract_change_requests_contract_id_fkey(contract_code,buildings(name))&order=id.desc`)) : none,
+      r === "CEO" ? q(api("contracts?status=eq.draft&select=id,contract_code,created_at,buildings(name)&order=id.desc")) : none,
+      r === "CEO" ? q(api(`invoices?status=eq.draft&document_type=eq.opening_balance&select=id,total_rial,contract_id,${bld}&order=id`)) : none,
+      can.recordPayment() ? q(api("payment_claims?status=eq.pending&select=id")) : none,
+      ["CEO", "REPAIR_MANAGER"].includes(r) ? q(rpc("pending_building_locations")) : none,
+      r === "CEO" ? q(api(`proformas?status=eq.issued&valid_until=gt.${encodeURIComponent(now)}&select=id,document_number,total_rial,issued_at,subject,${bld}&order=id.desc`)) : none,
+      canDocs() ? q(api(`proformas?status=eq.approved&invoice_id=is.null&select=id,document_number,total_rial,decided_at,subject,${bld}&order=id.desc`)) : none,
+      canDocs() ? q(api("faults?needs_text=not.is.null&status=in.(reported,assigned,in_progress)&select=id,fault_number,needs_text,needs_at,buildings(name),proformas(id,status)&order=needs_at.desc")) : none,
+      r === "CEO" ? q(api("contracts?doc_number=not.is.null&sign_ceo_at=is.null&status=in.(active,draft)&select=id,contract_code,doc_number,buildings(name)&order=doc_issued_at")) : none]);
+    const bn = (x) => esc((x.contracts && x.contracts.buildings && x.contracts.buildings.name) || (x.buildings && x.buildings.name) || "");
+    const cc = (x) => esc(fa((x.contracts && x.contracts.contract_code) || x.contract_code || ""));
+    const item = (href, title, sub, right = "") => `<div class="card tap" data-act="go" data-href="${href}"><div class="item-head"><div><div class="item-title">${title}</div><div class="small muted">${sub}</div></div>${right}<span>←</span></div></div>`;
+    const KIND = { amendment: "الحاقیه", edit: "ویرایش اطلاعات", renewal: "تمدید" };
+    const needOpen = needs.filter((f) => !(f.proformas || []).some((p) => p.status !== "cancelled" && p.status !== "rejected"));
+    return [
+      { key: "services", label: "گزارش سرویس منتظر تأیید", n: svc.length, html: svc.map(serviceCard) },
+      { key: "changes", label: "درخواست تغییر قرارداد", n: chg.length, html: chg.map((x) => item("#/requests", `${KIND[x.kind] || x.kind} · ${bn(x)}`, `قرارداد ${cc(x)} · ${jtime(x.requested_at)}`)) },
+      { key: "drafts", label: "قرارداد جدید منتظر تأیید", n: drafts.length, html: drafts.map((x) => item(`#/contract/${x.id}`, bn(x), `قرارداد ${cc(x)} · ثبت ${jtime(x.created_at)}`)) },
+      { key: "opening", label: "مانده‌ی افتتاحیه‌ی پیش‌نویس", n: opening.length, html: opening.map((x) => item(`#/contract/${x.contract_id}`, bn(x), `قرارداد ${cc(x)} · ${num(tom(x.total_rial))} تومان`)) },
+      { key: "claims", label: "اعلام پرداخت مشترک‌ها", n: claims.length, html: claims.length ? [item("#/claims", `${fa(claims.length)} اعلام پرداخت`, "پس از بررسی حساب بانکی تأیید یا رد کنید")] : [] },
+      { key: "locations", label: "موقعیت ساختمان ارسالی", n: locs.length, html: locs.length ? [item("#/locations", `${fa(locs.length)} موقعیت ساختمان`, "برای مسیریابی سرویس‌کارها تأیید کنید")] : [] },
+      { key: "proformas", label: "پیش‌فاکتور منتظر تأیید", n: pfWait.length, html: pfWait.map((x) => item(`#/proforma/${x.id}`, bn(x), `پیش‌فاکتور <bdi dir="ltr">${esc(fa(x.document_number || ""))}</bdi> · ${num(tom(x.total_rial))} تومان${x.subject ? " · " + esc(x.subject) : ""}`)) },
+      { key: "toinvoice", label: "پیش‌فاکتور تأییدشده که هنوز فاکتور نشده", n: pfInv.length, html: pfInv.map((x) => item(`#/proforma/${x.id}`, bn(x), `پیش‌فاکتور <bdi dir="ltr">${esc(fa(x.document_number || ""))}</bdi> · ${num(tom(x.total_rial))} تومان`)) },
+      { key: "needs", label: "اعلام نیاز تعمیرکار بدون پیش‌فاکتور", n: needOpen.length, html: needOpen.map((f) => `<div class="card tap" data-act="open-fault" data-id="${f.id}"><div class="item-head"><div><div class="item-title">${bn(f)}</div><div class="small muted">${txt(f.needs_text || "")}${f.needs_at ? " · " + jtime(f.needs_at) : ""}</div></div><span>←</span></div></div>`) },
+      { key: "sign", label: "قرارداد صادرشده منتظر امضای شما", n: sign.length, html: sign.map((x) => item(`#/contract/${x.id}`, bn(x), `قرارداد ${cc(x)} · فایل <bdi dir="ltr">${esc(fa(x.doc_number))}</bdi>`)) }
+    ].filter((g) => g.n > 0);
+  }
+  async function pendingForMe() {
+    const groups = await pendingGroups();
+    if (!groups.length) return "";
+    const total = groups.reduce((a, g) => a + g.n, 0);
+    return `<div class="card pending-card"><div class="item-head tap" data-act="go" data-href="#/pending"><div class="item-title">در انتظار تأیید یا اقدام شما (${fa(total)})</div><span class="small">همه ←</span></div>
+      ${groups.map((g) => `<div class="row tap pending-row" data-act="go" data-href="#/pending/${g.key}"><span class="spacer">${g.label}</span><span class="badge warn">${fa(g.n)}</span><span>←</span></div>`).join("")}</div>`;
+  }
+  async function viewPending(key) {
+    const groups = await pendingGroups();
+    const html = groups.length ? groups.map((g) => `<div class="section-title" id="pend-${g.key}"><h2>${g.label} (${fa(g.n)})</h2></div>${g.html.join("")}`).join("")
+      : `<div class="card empty">چیزی منتظر تأیید یا اقدام شما نیست</div>`;
+    if (key) setTimeout(() => { const t = document.getElementById(`pend-${key}`); if (t) t.scrollIntoView({ block: "start" }); }, 50);
+    return shell("در انتظار تأیید", "dashboard", `<a href="#/dashboard" data-act="back" class="small">→ بازگشت</a><div style="height:8px"></div>${html}`);
   }
 
   function faultCard(f) {
@@ -2058,7 +2074,7 @@
     const live = rows.filter((a) => a.status !== "cancelled");
     if (!live.length) return toast("برای این روز سرویسی ارجاع نشده است");
     const byTech = new Map(); live.forEach((a) => { const k = a.technician_name || "—"; if (!byTech.has(k)) byTech.set(k, []); byTech.get(k).push(a); });
-    const cols = [["ردیف", "8mm"], ["کد", "15mm"], ["ساختمان و نشانی"], ["مدیر ساختمان", "30mm"], ["کار اضافه / توضیح", "46mm"], ["ورود، خروج و امضای مدیر", "34mm"]];
+    const cols = [["ردیف", "8mm"], ["کد", "15mm"], ["ساختمان و نشانی"], ["مدیر ساختمان", "32mm"], ["کار اضافه / توضیح", "62mm"]];
     const cg = `<colgroup>${cols.map(([, w]) => `<col${w ? ` style="width:${w}"` : ""}>`).join("")}</colgroup>`;
     openPrint(`برنامه‌ی سرویس ${jdate(day)}`, (host) => {
       for (const [tech, list] of byTech) {
@@ -2068,8 +2084,7 @@
         const blocks = list.map((a, k) => `<table class="pp-items pp-plan">${cg}<tbody><tr><td class="c">${fa(k + 1)}</td><td class="c"><b>${esc(fa(a.contract_code))}</b></td>
           <td><b>${esc(a.building_name || "")}</b><div class="small">${esc(fa(a.address || ""))}</div></td>
           <td>${esc(a.manager_name || "")}${a.manager_mobile ? `<div><bdi dir="ltr">${esc(fa(a.manager_mobile))}</bdi></div>` : ""}</td>
-          <td>${a.note ? txt(a.note) : ""}</td><td class="pp-plan-sign"></td></tr></tbody></table>`);
-        blocks.push(`<div class="pp-signs"><div><b>سرویس‌کار</b>نام و امضا</div><div><b>مدیر فنی</b>نام و امضا</div></div>`);
+          <td>${a.note ? txt(a.note) : ""}</td></tr></tbody></table>`);
         paginate(host, { no: "", date: jdate(day), form: "PY-FO-PC-G10", rev: 0, issued: "۱۴۰۵/۰۸/۱۱" }, company, head, blocks, {});
       }
     });
@@ -2949,6 +2964,7 @@
         case "proforma": html = await viewProforma(Number(arg)); break;
         case "templates": html = role() === "CEO" ? await viewTemplates() : await viewDashboard(); break;
         case "reports": html = role() === "CEO" ? await viewReports() : await viewDashboard(); break;
+        case "pending": html = role() === "TECHNICIAN" ? await viewFaults() : await viewPending(arg); break;
         case "dashboard": html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard(); break;
         default: html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard();
       }

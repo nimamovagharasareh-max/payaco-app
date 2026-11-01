@@ -614,3 +614,20 @@ a.nima-credit { text-decoration: none; }
 .big-balance > span { display: block; font-size: 13px; font-weight: 600; color: var(--muted); }
 .big-balance .amount { font-size: 26px; font-weight: 800; color: inherit; }
 .big-balance .amount .rial { font-size: 12.5px; font-weight: 500; }
+
+/* v2.35.1 (Nima): buttons and tiles keep a physical "switch" feel — soft top-light gradient and a shadow underneath */
+.btn { background: linear-gradient(180deg, #3aa04b 0%, var(--brand) 55%, var(--brand-dark) 100%);
+  box-shadow: 0 2px 0 rgba(20, 70, 30, .35), 0 4px 10px rgba(15, 23, 42, .12), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.btn:hover { background: linear-gradient(180deg, #359447 0%, var(--brand-dark) 100%); }
+.btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(20, 70, 30, .35), 0 2px 5px rgba(15, 23, 42, .12); }
+.btn.secondary { background: linear-gradient(180deg, #ffffff 0%, var(--surface-2) 100%); color: var(--text);
+  box-shadow: 0 2px 0 rgba(15, 23, 42, .08), 0 3px 8px rgba(15, 23, 42, .08), inset 0 1px 0 #fff; }
+.btn.secondary:hover { background: linear-gradient(180deg, #ffffff 0%, color-mix(in srgb, var(--brand) 10%, var(--surface-2)) 100%); }
+.btn.danger { background: linear-gradient(180deg, #f26a6a 0%, var(--danger) 60%, #c53030 100%); box-shadow: 0 2px 0 rgba(120, 20, 20, .35), 0 4px 10px rgba(15, 23, 42, .12); }
+.btn:disabled { opacity: .55; box-shadow: none; }
+.stat { box-shadow: 0 2px 0 rgba(15, 23, 42, .05), 0 6px 16px rgba(15, 23, 42, .07); }
+.stat.tap:active { transform: translateY(1px) scale(.99); }
+@media (prefers-color-scheme: dark) {
+  .btn.secondary { background: linear-gradient(180deg, #22332e 0%, var(--surface-2) 100%); box-shadow: 0 2px 0 rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .06); }
+  .stat { box-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
+}

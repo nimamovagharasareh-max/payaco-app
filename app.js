@@ -97,7 +97,9 @@
   function datePickerHtml(name, isoDate) {
     const [y, m, d] = (isoDate || todayTehran()).split("-").map(Number);
     const j = g2j(y, m, d);
-    const years = []; for (let yy = j.jy - 2; yy <= j.jy + 1; yy++) years.push(yy);
+    // the list always reaches this year and next year too, whatever the preset date (e.g. renewing a contract that ended years ago)
+    const t = toEn(todayTehran()).split("-").map(Number), ty = g2j(t[0], t[1], t[2]).jy;
+    const years = []; for (let yy = Math.min(j.jy, ty) - 2; yy <= Math.max(j.jy, ty) + 1; yy++) years.push(yy);
     return `<div class="date-picker" data-date="${name}">
       <select data-part="d">${Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}" ${i + 1 === j.jd ? "selected" : ""}>${fa(i + 1)}</option>`).join("")}</select>
       <select data-part="m">${MONTHS.map((mn, i) => `<option value="${i + 1}" ${i + 1 === j.jm ? "selected" : ""}>${mn}</option>`).join("")}</select>

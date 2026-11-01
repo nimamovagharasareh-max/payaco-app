@@ -943,8 +943,9 @@
           const t = el.querySelector('[data-field="tech"]').value; if (t) body.technician_id = Number(t);
         }
         if (missed && !confirm("سرویس این ماه «انجام‌نشده» ثبت و صورتحساب آن با کسر صادر شود؟")) return;
-        await api("service_reports", { method: "POST", body });
-        close(); toast(missed ? "ثبت شد؛ صورتحساب ماه صادر شد" : "گزارش سرویس ثبت شد؛ منتظر تأیید"); route();
+        const [sr] = await api("service_reports", { method: "POST", prefer: "return=representation", body });
+        if (!missed && sr) notifyServiceLink(sr.id);
+        close(); toast(missed ? "ثبت شد؛ صورتحساب ماه صادر شد" : "گزارش سرویس ثبت شد؛ لینک تأیید برای مدیر ساختمان پیامک می‌شود"); route();
       }));
     });
   }
@@ -2192,10 +2193,11 @@
       });
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         if (!sel.value) throw new Error("ساختمان را انتخاب کنید");
-        await api("service_reports", { method: "POST", body: { contract_id: Number(sel.value), service_date: readDate(el, "sdate"), technician_id: me.id,
+        const [sr] = await api("service_reports", { method: "POST", prefer: "return=representation", body: { contract_id: Number(sel.value), service_date: readDate(el, "sdate"), technician_id: me.id,
           report_number: toEn(el.querySelector('[data-field="rno"]').value.trim()) || null, report_text: el.querySelector('[data-field="text"]').value.trim() || null,
           status: "pending_confirmation" } });
-        close(); toast("سرویس ثبت شد؛ منتظر تأیید"); route();
+        if (sr) notifyServiceLink(sr.id);
+        close(); toast("سرویس ثبت شد؛ لینک تأیید برای مدیر ساختمان پیامک می‌شود"); route();
       }));
     });
   }
@@ -2437,7 +2439,8 @@
 
   async function viewCompany() {
     const c = await rpc("get_company_profile");
-    const st = await api("app_settings?key=in.(sms.mode,sms.test_mobile,sms.template_id,sms.tpl_plan,sms.tpl_fault)&select=key,value");
+    const st = await api("app_settings?key=in.(sms.mode,sms.test_mobile,sms.template_id,sms.tpl_plan,sms.tpl_fault,sms.tpl_proforma,sms.tpl_service,sms.tpl_renewal,sms.tpl_insurance,sms.debt_day)&select=key,value");
+    const sv = (k) => (st.find((x) => x.key === k) || {}).value || "";
     const tplId = (st.find((x) => x.key === "sms.template_id") || {}).value || "";
     const tplPlan = (st.find((x) => x.key === "sms.tpl_plan") || {}).value || "", tplFault = (st.find((x) => x.key === "sms.tpl_fault") || {}).value || "";
     const smsMode = (st.find((x) => x.key === "sms.mode") || {}).value || "test";
@@ -2457,6 +2460,14 @@
         <label>قالب پیامک برنامه‌ی فردای سرویس‌کار (ساعت ۲۱)</label><input type="text" data-field="sms-tpl-plan" class="ltr" inputmode="numeric" value="${esc(tplPlan)}" placeholder="پارامترها: COUNT، DAY">
         <label>قالب پیامک ارجاع خرابی به تعمیرکار</label><input type="text" data-field="sms-tpl-fault" class="ltr" inputmode="numeric" value="${esc(tplFault)}" placeholder="پارامترها: PRIORITY، BUILDING، NUMBER">
         <div class="actions"><button class="btn secondary small" data-act="sms-tech-tpl-save">ذخیره‌ی قالب‌های سرویس‌کار</button></div>
+        <div class="item-title" style="margin-top:12px">پیامک‌های مدیر ساختمان</div>
+        <div class="small muted">لینک تأیید سرویس پس از ثبت هر سرویس؛ لینک پیش‌فاکتور با دکمه‌ی روی پیش‌فاکتور؛ یادآوری‌ها هر روز ساعت ۱۰ صبح فقط در حالت واقعی (هر کدام یک بار): بدهی در روز تعیین‌شده‌ی هر ماه با قالب بالا، پایان قرارداد و بیمه‌نامه ۳۰ و ۷ روز مانده.</div>
+        <label>قالب لینک پیش‌فاکتور</label><input type="text" data-field="sms-tpl-proforma" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_proforma"))}" placeholder="پارامترها: BUILDING، NUMBER، AMOUNT، CODE">
+        <label>قالب لینک تأیید سرویس</label><input type="text" data-field="sms-tpl-service" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_service"))}" placeholder="پارامترها: BUILDING، DATE، CODE">
+        <label>قالب یادآوری تمدید قرارداد</label><input type="text" data-field="sms-tpl-renewal" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_renewal"))}" placeholder="پارامترها: BUILDING، DATE">
+        <label>قالب یادآوری تمدید بیمه‌نامه</label><input type="text" data-field="sms-tpl-insurance" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_insurance"))}" placeholder="پارامترها: BUILDING، DATE">
+        <label>روز یادآوری بدهی در هر ماه شمسی</label><input type="text" data-field="sms-debt-day" class="ltr" inputmode="numeric" value="${esc(fa(sv("sms.debt_day") || "5"))}">
+        <div class="actions"><button class="btn secondary small" data-act="sms-cust-tpl-save">ذخیره</button><button class="btn secondary small" data-act="sms-sample">ارسال نمونه‌ی همه‌ی پیامک‌ها به شماره‌ی آزمایشی</button></div>
         <label>شماره‌ی آزمایشی پیامک</label><div class="row"><input type="text" data-field="sms-test" class="ltr" inputmode="tel" value="${esc(testMobile)}" placeholder="خالی = تلفن شرکت" style="flex:1"><button class="btn secondary small" data-act="sms-test-save">ذخیره</button></div>
         <div class="actions"><button class="btn secondary small" data-act="sms-ping">ارسال پیامک آزمایشی</button><button class="btn ${smsMode === "live" ? "secondary" : "danger"} small" data-act="sms-mode" data-k="${smsMode === "live" ? "test" : "live"}">${smsMode === "live" ? "برگشت به حالت آزمایشی" : "فعال‌سازی ارسال واقعی"}</button></div></div>`);
   }
@@ -2731,6 +2742,7 @@
     const st = pfState(p), open = p.status === "issued" && !(p.expired || new Date(p.valid_until) < new Date());
     const items = (p.items || []).map((it, k) => `<tr><td class="c">${fa(k + 1)}</td><td>${esc(it.description)}<div class="small muted">${fa(it.qty)} ${esc(it.unit || "")} × ${num(Math.round(it.unit_price / 10))} تومان</div></td><td class="n">${num(Math.round(it.amount / 10))}</td></tr>`).join("");
     const acts = [`<button class="btn" data-act="pf-print" data-id="${id}">چاپ / PDF</button>`];
+    if (p.status === "issued" && canDocs() && open) acts.push(`<button class="btn" data-act="pf-sms" data-id="${id}">ارسال پیامک به مدیر ساختمان</button>`);
     if (p.status === "issued" && canDocs()) acts.push(`<button class="btn secondary" data-act="pf-share" data-code="${esc(p.code || "")}" data-no="${esc(p.number)}">لینک تأیید برای مدیر ساختمان</button>`, `<button class="btn secondary" data-act="pf-edit" data-id="${id}">ویرایش${open ? "" : " و صدور دوباره"}</button>`);
     if (open && role() === "CEO") acts.push(`<button class="btn ok" data-act="pf-approve" data-id="${id}">تأیید از طرف کارفرما</button>`, `<button class="btn danger" data-act="pf-reject" data-id="${id}">رد</button>`);
     if (p.status === "issued" && canDocs()) acts.push(`<button class="btn secondary" data-act="pf-cancel" data-id="${id}">لغو</button>`);
@@ -2786,6 +2798,54 @@
   }
 
   // public page for the building manager: /?p=<code> or #/pf/<code>
+  // D-99: approval link to the building manager right after a service is recorded (the morning job retries misses)
+  function notifyServiceLink(id) { callFunction("notify-customers", { kind: "service", service_report_id: id }).catch(() => {}); }
+  async function sendProformaSms(id) {
+    const pre = await callFunction("notify-customers", { kind: "proforma", proforma_id: id, dry_run: true });
+    sheet(`<h3>ارسال لینک پیش‌فاکتور با پیامک</h3>
+      ${pre.test ? `<div class="hint">حالت آزمایشی: پیامک به شماره‌ی آزمایشی <bdi dir="ltr">${esc(fa(pre.to || ""))}</bdi> می‌رود.</div>` : ""}
+      <label>شماره‌ی مدیر ساختمان</label><input type="text" data-field="mobile" class="ltr" inputmode="tel" value="${esc(fa(pre.intended || ""))}">
+      <div class="card small" style="white-space:pre-line">${esc(pre.text)}</div>
+      <div class="actions"><button class="btn" data-act="save">ارسال</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+      const r = await callFunction("notify-customers", { kind: "proforma", proforma_id: id, mobile: toEn(el.querySelector('[data-field="mobile"]').value.trim()) || null });
+      close(); toast(`پیامک به ${fa(r.to)} فرستاده شد${r.test ? " (آزمایشی)" : ""}`);
+    })));
+  }
+  async function viewPublicService(code) {
+    $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
+    let s;
+    try { s = await publicRpc("get_service_by_code", { p_code: code }); } catch (e) {
+      $app.innerHTML = `<div class="login-wrap"><div class="login-card"><h1>گزارش سرویس پیدا نشد</h1><p class="muted">لینک نادرست است. با دفتر پایاکو تماس بگیرید.</p></div></div>`; return;
+    }
+    const open = s.status === "pending_confirmation";
+    const ST = { confirmed: ["تأیید شد", "ok"], rejected: ["رد شد", "danger"], pending_confirmation: ["منتظر تأیید شما", "warn"] };
+    const stt = ST[s.status] || [s.status, ""];
+    $app.innerHTML = `<main class="doc-page"><div class="card" style="max-width:560px;margin:12px auto">
+      <div class="item-head"><div><img src="icons/logo.png" alt="پایاکو" style="height:44px"></div><span class="badge ${stt[1]}">${stt[0]}</span></div>
+      <h2 style="margin:10px 0 4px">تأیید سرویس ماهانه‌ی آسانسور</h2>
+      <dl class="kv"><dt>ساختمان</dt><dd>${esc(s.building || "")}</dd><dt>تاریخ سرویس</dt><dd>${jdate(s.date)}</dd>
+        ${s.month ? `<dt>سرویس ماه</dt><dd>${MONTHS[s.month - 1]} ${fa(s.year)}</dd>` : ""}${s.technician ? `<dt>سرویس‌کار</dt><dd>${esc(s.technician)}</dd>` : ""}
+        ${s.report_number ? `<dt>شماره برگه</dt><dd>${esc(fa(s.report_number))}</dd>` : ""}</dl>
+      ${s.text ? `<div class="small muted" style="margin:6px 0">${txt(s.text)}</div>` : ""}
+      ${open ? `<label>امتیاز شما به این سرویس</label><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-star="${n}">★</button>`).join("")}</div>
+        <label>نام شما (اختیاری)</label><input type="text" data-field="name">
+        <label>توضیح (برای رد یا امتیاز ۱ و ۲ ستاره لازم است)</label><textarea data-field="note"></textarea>
+        <div class="actions"><button class="btn ok" data-act="sv-ok">تأیید انجام سرویس</button><button class="btn secondary" data-act="sv-no">سرویس انجام نشده / رد</button></div>`
+        : `<div class="hint">${s.status === "confirmed" ? `این سرویس تأیید شده است${s.stars ? ` · امتیاز ${fa(s.stars)} از ۵` : ""}. سپاسگزاریم.` : s.status === "rejected" ? `این سرویس رد شده است${s.rejection_note ? ": " + esc(s.rejection_note) : ""}. همکاران ما پیگیری می‌کنند.` : ""}</div>`}
+      ${s.company_phone ? `<div class="small muted" style="margin-top:10px">تماس با پایاکو: <a href="tel:${esc(toEn(s.company_phone))}" class="ltr">${esc(fa(s.company_phone))}</a></div>` : ""}
+    </div></main>`;
+    let stars = null;
+    $app.onclick = (e) => {
+      const st = e.target.closest(".star");
+      if (st) { stars = Number(st.dataset.star); $app.querySelectorAll(".star").forEach((x) => x.classList.toggle("on", Number(x.dataset.star) <= stars)); return; }
+      const a = e.target.closest("[data-act]"); if (!a) return;
+      const name = ($app.querySelector('[data-field="name"]') || {}).value || null, note = ($app.querySelector('[data-field="note"]') || {}).value || null;
+      if (a.dataset.act === "sv-ok") publicRpc("decide_service_by_code", { p_code: code, p_approve: true, p_stars: stars, p_note: note, p_name: name }).then(() => { toast("تأیید شد؛ سپاسگزاریم"); viewPublicService(code); }).catch((er) => toast(er.message));
+      if (a.dataset.act === "sv-no") { if (!confirm("سرویس رد شود؟")) return; publicRpc("decide_service_by_code", { p_code: code, p_approve: false, p_stars: null, p_note: note, p_name: name }).then(() => { toast("ثبت شد؛ پیگیری می‌کنیم"); viewPublicService(code); }).catch((er) => toast(er.message)); }
+    };
+  }
+
   async function viewPublicProforma(code) {
     $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
     let p;
@@ -2931,6 +2991,10 @@
     if (qc && /^[a-zA-Z0-9]{6,16}$/.test(qc) && !location.hash) { history.replaceState(null, "", location.pathname + "#/c/" + qc); return viewPublicDoc(null, qc); }
     const qp = new URLSearchParams(location.search).get("p");
     if (qp && /^[a-zA-Z0-9]{6,16}$/.test(qp) && !location.hash) { history.replaceState(null, "", location.pathname + "#/pf/" + qp); return viewPublicProforma(qp); }
+    const qv = new URLSearchParams(location.search).get("v");
+    if (qv && /^[a-zA-Z0-9]{6,16}$/.test(qv) && !location.hash) { history.replaceState(null, "", location.pathname + "#/sv/" + qv); return viewPublicService(qv); }
+    const sv = location.hash.match(/^#\/sv\/([a-zA-Z0-9]{6,16})$/);
+    if (sv) return viewPublicService(sv[1]);
     const pp = location.hash.match(/^#\/pf\/([a-zA-Z0-9]{6,16})$/);
     if (pp) return viewPublicProforma(pp[1]);
     if (!session) return viewLogin();
@@ -3040,6 +3104,7 @@
       rpc("invoice_from_proforma", { p_id: id }).then((inv) => { toast("فاکتور صادر شد"); payOffer = inv; location.hash = `#/doc/${inv}`; }).catch((er) => toast(er.message));
     if (act === "pf-reject") { const note = prompt("دلیل رد از طرف کارفرما:"); if (note !== null) rpc("decide_proforma", { p_id: id, p_approve: false, p_note: note.trim() || null }).then(() => { toast("رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "pf-cancel") { const note = prompt("دلیل لغو پیش‌فاکتور:"); if (note !== null) rpc("cancel_proforma", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
+    if (act === "pf-sms") sendProformaSms(id).catch((er) => toast(er.message));
     if (act === "pf-share") {
       const url = `${location.origin}${location.pathname}?p=${el.dataset.code}`, text = `پیش‌فاکتور پایاکو شماره ${fa(el.dataset.no)} — برای مشاهده و تأیید:`;
       if (navigator.share) navigator.share({ title: text, text, url }).catch(() => {}); else copyText(url);
@@ -3166,6 +3231,13 @@
     if (act === "sms-tpl-save") guarded(el, async () => { await rpc("set_sms_template", { p_id: toEn(document.querySelector("[data-field=sms-tpl]").value.trim()) }); toast("ذخیره شد"); });
     if (act === "sms-tech-tpl-save") guarded(el, async () => { await rpc("set_sms_tech_templates", { p_plan: toEn(document.querySelector("[data-field=sms-tpl-plan]").value.trim()), p_fault: toEn(document.querySelector("[data-field=sms-tpl-fault]").value.trim()) }); toast("ذخیره شد"); });
     if (act === "sms-test-save") guarded(el, async () => { await rpc("set_sms_test_mobile", { p_mobile: toEn(document.querySelector("[data-field=sms-test]").value.trim()) }); toast("ذخیره شد"); });
+    if (act === "sms-cust-tpl-save") guarded(el, async () => { const v = (k) => toEn(document.querySelector(`[data-field=${k}]`).value.trim());
+      await rpc("set_sms_customer_templates", { p: { proforma: v("sms-tpl-proforma"), service: v("sms-tpl-service"), renewal: v("sms-tpl-renewal"), insurance: v("sms-tpl-insurance"), debt_day: Number(v("sms-debt-day")) || 5 } }); toast("ذخیره شد"); });
+    if (act === "sms-sample") guarded(el, async () => { if (!confirm("از هر نوع پیامک یک نمونه با داده‌ی واقعی به شماره‌ی آزمایشی فرستاده شود؟")) return;
+      const r = await callFunction("notify-customers", { kind: "sample" });
+      sheet(`<h3>نتیجه‌ی ارسال نمونه به <bdi dir="ltr">${esc(fa(r.to || ""))}</bdi></h3>${(r.results || []).map((x) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span class="spacer">${esc(x.kind)}</span>${x.ok ? `<span class="badge ok">فرستاده شد</span>` : `<span class="badge danger">${esc(x.error || "ناموفق")}</span>`}</div>`).join("")}
+        <div class="hint">در حالت واقعی امروز: ${fa(r.counts.debt)} بدهکار، ${fa(r.counts.renewal)} قرارداد رو به پایان (۳۰ روز)، ${fa(r.counts.insurance)} بیمه‌نامه‌ی رو به پایان.</div>
+        <div class="actions"><button class="btn secondary" data-close>بستن</button></div>`, () => {}); });
     if (act === "sms-ping") guarded(el, async () => { const r = await callFunction("send-sms", { kind: "ping" }); toast(`پیامک آزمایشی به ${fa(r.to)} فرستاده شد`); });
     if (act === "sms-mode") {
       const live = el.dataset.k === "live";

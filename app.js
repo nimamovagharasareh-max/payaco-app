@@ -2047,10 +2047,32 @@
     return shell("برنامه سرویس", "services", `
       <div class="card"><label>روز برنامه</label>${datePickerHtml("pday", planDate)}
         <div class="actions"><button class="btn secondary small" data-act="plan-day" data-d="-1">روز قبل</button><button class="btn secondary small" data-act="plan-go">نمایش</button><button class="btn secondary small" data-act="plan-day" data-d="1">روز بعد</button></div></div>
-      <div class="row"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button></div>
+      <div class="row"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button>${byTech.size ? `<button class="btn secondary" data-act="plan-print">چاپ برنامه‌ی این روز</button>` : ""}</div>
       <div class="section-title"><h2>${dayLabel(planDate)} · ${fa(rows.filter((a) => a.status !== "cancelled").length)} سرویس</h2></div>
       ${byTech.size ? [...byTech.entries()].map(([t, list]) => `<div class="section-title"><h2 class="small">${esc(t)} (${fa(list.length)})</h2></div>${list.map((a) => assignmentCard(a, false)).join("")}`).join("")
         : `<div class="card empty">برای این روز سرویسی ارجاع نشده است</div>`}`);
+  }
+  /* D-96: printed daily service plan, one sheet per technician (form PY-FO-PC-G10) */
+  async function printPlan(day) {
+    const [rows, company] = await Promise.all([rpc("my_assignments", { p_from: day, p_to: day }), rpc("get_company_profile")]);
+    const live = rows.filter((a) => a.status !== "cancelled");
+    if (!live.length) return toast("برای این روز سرویسی ارجاع نشده است");
+    const byTech = new Map(); live.forEach((a) => { const k = a.technician_name || "—"; if (!byTech.has(k)) byTech.set(k, []); byTech.get(k).push(a); });
+    const cols = [["ردیف", "8mm"], ["کد", "15mm"], ["ساختمان و نشانی"], ["مدیر ساختمان", "30mm"], ["کار اضافه / توضیح", "46mm"], ["ورود، خروج و امضای مدیر", "34mm"]];
+    const cg = `<colgroup>${cols.map(([, w]) => `<col${w ? ` style="width:${w}"` : ""}>`).join("")}</colgroup>`;
+    openPrint(`برنامه‌ی سرویس ${jdate(day)}`, (host) => {
+      for (const [tech, list] of byTech) {
+        const head = `<div class="pp-title"><h1>برنامه‌ی سرویس روزانه</h1><span class="pp-chip">${fa(list.length)} سرویس</span></div><div class="pp-rule"></div>
+          ${ppInfo([[["سرویس‌کار", esc(tech)], ["روز", `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "UTC" }).format(new Date(day + "T12:00:00Z"))} ${jdate(day)}`]]])}
+          <table class="pp-items pp-plan">${cg}<thead><tr>${cols.map(([h]) => `<th>${h}</th>`).join("")}</tr></thead></table>`;
+        const blocks = list.map((a, k) => `<table class="pp-items pp-plan">${cg}<tbody><tr><td class="c">${fa(k + 1)}</td><td class="c"><b>${esc(fa(a.contract_code))}</b></td>
+          <td><b>${esc(a.building_name || "")}</b><div class="small">${esc(fa(a.address || ""))}</div></td>
+          <td>${esc(a.manager_name || "")}${a.manager_mobile ? `<div><bdi dir="ltr">${esc(fa(a.manager_mobile))}</bdi></div>` : ""}</td>
+          <td>${a.note ? txt(a.note) : ""}</td><td class="pp-plan-sign"></td></tr></tbody></table>`);
+        blocks.push(`<div class="pp-signs"><div><b>سرویس‌کار</b>نام و امضا</div><div><b>مدیر فنی</b>نام و امضا</div></div>`);
+        paginate(host, { no: "", date: jdate(day), form: "PY-FO-PC-G10", rev: 0, issued: "۱۴۰۵/۰۸/۱۱" }, company, head, blocks, {});
+      }
+    });
   }
   async function sheetNewAssignment() {
     const techs = (await api("technicians?status=eq.active&select=id,name,skills&order=name")).filter((t) => (t.skills || []).includes("service"));
@@ -3047,6 +3069,7 @@
     if (act === "csearch-clear") { contractSearch = ""; const i = document.getElementById("csearch"); if (i) i.value = ""; applyContractSearch(); }
     if (act === "go-locations") location.hash = "#/locations";
     if (act === "new-assignment") sheetNewAssignment().catch((er) => toast(er.message));
+    if (act === "plan-print") printPlan(planDate).catch((er) => toast(er.message));
     if (act === "plan-go") { planDate = readDate(document, "pday"); route(); }
     if (act === "plan-day") { planDate = addDays(readDate(document, "pday"), Number(el.dataset.d)); route(); }
     if (act === "assignment-note") sheetAssignmentNote(Number(el.dataset.id), el.dataset.note || "");

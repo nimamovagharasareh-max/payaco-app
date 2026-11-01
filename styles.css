@@ -548,3 +548,9 @@ a.nima-credit { text-decoration: none; }
 /* D-95: dashboard "waiting for you" card */
 .pending-card { border-color: var(--warn, #e0a800); }
 .pending-row { padding: 8px 0; border-top: 1px solid var(--line); gap: 8px; align-items: center; }
+
+/* D-96: printed daily service plan */
+.pp-plan { table-layout: fixed; margin: 0; }
+.pp-plan + .pp-plan, .pp-blk > .pp-plan { margin-top: -1px; }
+.pp-plan td { vertical-align: top; height: 15mm; word-break: break-word; }
+.pp-plan .small { font-size: 8.5pt; color: #444; }

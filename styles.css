@@ -554,3 +554,6 @@ a.nima-credit { text-decoration: none; }
 .pp-plan + .pp-plan, .pp-blk > .pp-plan { margin-top: -1px; }
 .pp-plan td { vertical-align: top; height: 11mm; word-break: break-word; }
 .pp-plan .small { font-size: 8.5pt; color: #444; }
+
+/* D-98: search box above contract pickers */
+.csel-q { margin-bottom: 6px; }

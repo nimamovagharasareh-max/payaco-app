@@ -267,9 +267,24 @@
   }
   const SKILL = { service: "سرویس‌کار", electrical: "تعمیرکار برق", mechanical: "تعمیرکار مکانیک" };
   const skillText = (t) => (t.skills || []).map((k) => SKILL[k] || k).join("، ");
+  // D-98: every contract picker has a search box (code or building name); iOS ignores hidden <option>, so the list is rebuilt
+  const CSEL_Q = `<input type="search" class="csel-q" placeholder="جست‌وجو با کد یا نام ساختمان" enterkeyhint="search" autocomplete="off">`;
   function contractSelectHtml(contracts, name = "contract") {
-    return `<select data-field="${name}">${contracts.map((c) => `<option value="${c.id}">${esc(fa(c.contract_code))} — ${esc(c.building_name || "")}</option>`).join("")}</select>`;
+    return `${CSEL_Q}<select data-field="${name}" class="csel">${contracts.map((c) => `<option value="${c.id}">${esc(fa(c.contract_code))} — ${esc(c.building_name || "")}</option>`).join("")}</select>`;
   }
+  const normQ = (x) => toEn(String(x || "")).replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/\u200c/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  const cselAll = new WeakMap();
+  document.addEventListener("input", (e) => {
+    const box = e.target.closest && e.target.closest(".csel-q"); if (!box) return;
+    let sel = box.nextElementSibling; while (sel && sel.tagName !== "SELECT") sel = sel.nextElementSibling;
+    if (!sel) return;
+    if (!cselAll.has(sel)) cselAll.set(sel, Array.from(sel.options).map((o) => ({ v: o.value, t: o.textContent, s: normQ(o.textContent) })));
+    const all = cselAll.get(sel), q = normQ(box.value), before = sel.value;
+    const hits = q ? all.filter((o) => q.split(" ").every((w) => o.s.includes(w))) : all;
+    sel.innerHTML = hits.map((o) => `<option value="${esc(o.v)}">${esc(o.t)}</option>`).join("") || `<option value="" disabled selected>چیزی پیدا نشد</option>`;
+    if (hits.some((o) => o.v === before)) sel.value = before;
+    if (sel.value !== before) sel.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 
   /* ------------------------------------------------------------------ layout */
   // line icons (24px grid, stroke = currentColor)
@@ -782,6 +797,7 @@
       loadUnits().catch(() => {});
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         const c = contracts.find((x) => String(x.id) === sel.value);
+        if (!c) throw new Error("ساختمان را از فهرست انتخاب کنید");
         let buildingId = c.building_id, code = c.subscription_code;
         if (units.length > 1) {
           const pick = el.querySelector('[data-field="unit"]');
@@ -2634,7 +2650,7 @@
       <label>قیمت واحد</label><input type="text" class="ltr" inputmode="numeric" data-r="price" value="${it.unit_price ? esc(nf.format(it.unit_price / 10)) : ""}">
       <button type="button" class="btn secondary small" data-act="row-del">حذف ردیف</button></div>`;
     sheet(`<h3>${ed ? `ویرایش پیش‌فاکتور ${esc(fa(ed.number))}` : pf ? "صدور پیش‌فاکتور" : "صدور فاکتور تعمیرات"}</h3>
-      ${ed ? `<div class="small muted">${esc(ed.building ? ed.building.name : "")}</div>` : `<label>ساختمان / قرارداد</label><select data-field="contract">${all.map((c) => `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${esc(fa(c.contract_code))} · ${esc(c.building_name || "")}</option>`).join("")}</select>`}
+      ${ed ? `<div class="small muted">${esc(ed.building ? ed.building.name : "")}</div>` : `<label>ساختمان / قرارداد</label>${CSEL_Q}<select data-field="contract" class="csel">${all.map((c) => `<option value="${c.id}" ${c.id === cid ? "selected" : ""}>${esc(fa(c.contract_code))} · ${esc(c.building_name || "")}</option>`).join("")}</select>`}
       ${pf ? `<label>موضوع</label><input type="text" data-field="subject" value="${esc((ed && ed.subject) || opts.subject || "")}" placeholder="مثلاً: تعویض تابلو فرمان">` : ""}
       <label>واحد مبلغ‌ها</label><div class="seg" data-field="unit"><button type="button" data-u="toman" class="on">تومان</button><button type="button" data-u="rial">ریال</button></div>
       <div data-field="rows">${(ed ? ed.items : [{}]).map(rowHtml).join("")}</div>

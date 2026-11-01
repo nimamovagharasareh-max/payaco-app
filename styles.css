@@ -544,3 +544,7 @@ a.nima-credit { text-decoration: none; }
 /* per-code extra work on a service assignment (D-94) */
 .pick-wrap .pick-note { margin: 0 28px 8px 0; width: calc(100% - 28px); }
 .assign-note { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--warn, #e0a800) 14%, transparent); font-size: 13px; }
+
+/* D-95: dashboard "waiting for you" card */
+.pending-card { border-color: var(--warn, #e0a800); }
+.pending-row { padding: 8px 0; border-top: 1px solid var(--line); gap: 8px; align-items: center; }

@@ -396,12 +396,7 @@
           ${ir.length > 6 ? `<div class="small muted">و ${fa(ir.length - 6)} مورد دیگر</div>` : ""}</div>`;
       } catch (e) { /* reminder only */ }
     }
-    if (can.recordPayment()) {
-      try {
-        const pc = await api("payment_claims?status=eq.pending&select=id");
-        if (pc.length) closeNote += `<div class="card tap" data-act="go-claims" style="border-color:var(--ok)"><div class="item-title">${fa(pc.length)} اعلام پرداخت منتظر بررسی</div><div class="small muted">مشترک‌ها واریز کرده‌اند؛ پس از بررسی حساب بانکی تأیید کنید.</div></div>`;
-      } catch (e) { /* reminder only */ }
-    }
+    const waiting = await pendingForMe(d).catch(() => "");
     const quick = [];
     if (can.reportFault()) quick.push(`<button class="btn" data-act="new-fault">+ ثبت خرابی</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="new-service">+ ثبت گزارش سرویس</button>`);
@@ -413,11 +408,44 @@
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
     return shell("داشبورد", "dashboard", `
       <div class="hero"><div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
-      ${closeNote}<div class="stats">${stats.join("")}</div>
+      ${waiting}${closeNote}<div class="stats">${stats.join("")}</div>
       <div class="actions">${quick.join("")}</div>
       ${isStaff() ? `<div class="row" style="margin-top:10px"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
       <div class="section-title"><h2>خرابی‌های باز</h2><a href="#/faults" class="small">همه</a></div>
       ${urgent.length ? urgent.map(faultCard).join("") : `<div class="card empty">خرابی بازی وجود ندارد</div>`}`);
+  }
+
+  /* D-95: everything someone sent that waits for this user's approval or action, in one card at the top of the dashboard */
+  async function pendingForMe(d) {
+    const r = role(), now = new Date().toISOString(), q = (p) => p.catch(() => null);
+    const n = (x) => (Array.isArray(x) ? x.length : 0);
+    const [svc, chg, drafts, opening, claims, locs, pfWait, pfInv, needs, sign] = await Promise.all([
+      Promise.resolve(Number(d.pending_services) || 0),
+      r === "CEO" ? q(api("contract_change_requests?status=eq.pending&select=id")) : null,
+      r === "CEO" ? q(api("contracts?status=eq.draft&select=id")) : null,
+      r === "CEO" ? q(api("invoices?status=eq.draft&document_type=eq.opening_balance&select=id")) : null,
+      can.recordPayment() ? q(api("payment_claims?status=eq.pending&select=id")) : null,
+      ["CEO", "REPAIR_MANAGER"].includes(r) ? q(rpc("pending_building_locations")) : null,
+      r === "CEO" ? q(api(`proformas?status=eq.issued&valid_until=gt.${encodeURIComponent(now)}&select=id`)) : null,
+      canDocs() ? q(api("proformas?status=eq.approved&invoice_id=is.null&select=id")) : null,
+      canDocs() ? q(api("faults?needs_text=not.is.null&status=in.(reported,assigned,in_progress)&select=id,proformas(id,status)")) : null,
+      r === "CEO" ? q(api("contracts?doc_number=not.is.null&sign_ceo_at=is.null&status=in.(active,draft)&select=id")) : null]);
+    const needOpen = Array.isArray(needs) ? needs.filter((f) => !(f.proformas || []).some((p) => p.status !== "cancelled" && p.status !== "rejected")).length : 0;
+    const rows = [
+      [svc && (can.approveService()) ? svc : 0, "گزارش سرویس منتظر تأیید", "#/services", "pending"],
+      [n(chg), "درخواست تغییر قرارداد (الحاقیه، ویرایش، تمدید)", "#/requests"],
+      [n(drafts), "قرارداد جدید منتظر تأیید", "#/contracts"],
+      [n(opening), "مانده‌ی افتتاحیه‌ی پیش‌نویس", "#/opening"],
+      [n(claims), "اعلام پرداخت مشترک‌ها (بررسی حساب بانکی)", "#/claims"],
+      [n(locs), "موقعیت ساختمان ارسالی", "#/locations"],
+      [n(pfWait), "پیش‌فاکتور منتظر تأیید کارفرما / شما", "#/docs"],
+      [n(pfInv), "پیش‌فاکتور تأییدشده که هنوز فاکتور نشده", "#/docs"],
+      [needOpen, "اعلام نیاز تعمیرکار بدون پیش‌فاکتور", "#/faults"],
+      [n(sign), "قرارداد صادرشده منتظر امضای شما", "#/contracts"]].filter((x) => x[0] > 0);
+    if (!rows.length) return "";
+    const total = rows.reduce((a, x) => a + x[0], 0);
+    return `<div class="card pending-card"><div class="item-title">در انتظار تأیید یا اقدام شما (${fa(total)})</div>
+      ${rows.map(([c, label, href, sf]) => `<div class="row tap pending-row" data-act="go" data-href="${href}"${sf ? ` data-sf="${sf}"` : ""}><span class="spacer">${label}</span><span class="badge warn">${fa(c)}</span><span>←</span></div>`).join("")}</div>`;
   }
 
   function faultCard(f) {

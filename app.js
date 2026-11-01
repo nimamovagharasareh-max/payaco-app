@@ -1139,9 +1139,15 @@
     });
   }
 
+  // line icons that replace the old emoji (D-101): same stroke family as the tab bar, coloured by currentColor
+  const svgI = (d) => `<svg class="ico-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICO_PHONE = svgI('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>');
+  const ICO_WEB = svgI('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>');
+  const ICO_CHECK = `<span style="color:var(--ok)">${svgI('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.5"/>')}</span>`;
+  const ICO_TODO = `<span class="muted">${svgI('<circle cx="12" cy="12" r="9"/>')}</span>`;
   /* item 15 (D-91): paper signature cycle of an issued contract — the system only records the steps */
   function signatureCard(id, h, files) {
-    const step = (done, label, when, btn) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><div class="spacer"><div>${done ? "✅" : "⬜️"} ${label}</div>${when ? `<div class="small muted">${when}</div>` : ""}</div>${btn || ""}</div>`;
+    const step = (done, label, when, btn) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><div class="spacer"><div>${done ? ICO_CHECK : ICO_TODO} ${label}</div>${when ? `<div class="small muted">${when}</div>` : ""}</div>${btn || ""}</div>`;
     const ch = can.changeContract(), signed = files.find((f) => f.id === h.sign_returned_doc_id);
     const s1 = step(!!h.sign_ceo_at, "امضای مدیرعامل", h.sign_ceo_at ? jtime(h.sign_ceo_at) : "",
       !h.sign_ceo_at && role() === "CEO" ? `<button class="btn ok small" data-act="sign-step" data-step="ceo" data-id="${id}">امضا کردم</button>` : "");
@@ -1311,7 +1317,7 @@
 
   function showCredentials(name, username, password, r) {
     const text = `سامانه پایاکو\nآدرس: ${location.origin}\nنام: ${name}\nنقش: ${ROLE[r] || r}\nنام کاربری: ${username}\nرمز اولیه: ${password}`;
-    sheet(`<h3>کاربر ساخته شد ✅</h3>
+    sheet(`<h3>کاربر ساخته شد</h3>
       <div class="card" style="white-space:pre-line;direction:rtl">${esc(text)}</div>
       <div class="hint">این اطلاعات را برای کاربر بفرستید. رمز فقط همین‌جا نمایش داده می‌شود.</div>
       <div class="actions"><button class="btn" data-act="copy">کپی متن</button><button class="btn secondary" data-close>بستن</button></div>`,
@@ -2280,9 +2286,9 @@
     const copyBtn = (val, label) => `<button type="button" class="doc-copy no-print" data-act="copy" data-val="${esc(val)}" aria-label="کپی ${esc(label)}">کپی</button>`;
     const bankRow = (label, val, shown, ltr = true) => val ? `<div class="doc-bank-row"><span class="doc-bank-label">${label}</span><bdi dir="${ltr ? "ltr" : "rtl"}" class="doc-bank-val">${shown}</bdi>${copyBtn(val, label)}</div>` : "";
     const contacts = [
-      c.phone ? `<span>☎ <bdi dir="ltr">${esc(fa(c.phone))}</bdi></span>` : "",
-      c.phone2 ? `<span>☎ <bdi dir="ltr">${esc(fa(c.phone2))}</bdi></span>` : "",
-      c.website ? `<span>🌐 <bdi dir="ltr">${esc(c.website)}</bdi></span>` : "",
+      c.phone ? `<span>${ICO_PHONE} <bdi dir="ltr">${esc(fa(c.phone))}</bdi></span>` : "",
+      c.phone2 ? `<span>${ICO_PHONE} <bdi dir="ltr">${esc(fa(c.phone2))}</bdi></span>` : "",
+      c.website ? `<span>${ICO_WEB} <bdi dir="ltr">${esc(c.website)}</bdi></span>` : "",
       c.instagram ? `<span>Instagram: <bdi dir="ltr">@${esc(c.instagram.replace(/^@/, ""))}</bdi></span>` : ""
     ].filter(Boolean).join("");
     return `<article class="doc" id="doc">

@@ -310,6 +310,32 @@
     if (isExternal()) return [["dashboard", "home", "خانه"], ["services", "check", "سرویس‌ها"], ["faults", "alert", "خرابی‌ها"], ["contracts", "doc", "صورتحساب"], ["more", "more", "بیشتر"]];
     return [["dashboard", "home", "داشبورد"], ["faults", "alert", "خرابی‌ها"], ["services", "check", "سرویس‌ها"], ["contracts", "doc", "قراردادها"], ["more", "more", "بیشتر"]];
   }
+  // D-101: one primary action on the contract page; the rest grouped in a sheet (finance / contract / documents, termination apart)
+  function contractActionsHtml(actions) {
+    const act = (h) => (h.match(/data-act="([^"]+)"/) || [])[1] || "";
+    const primary = actions.find((h) => act(h) === "pay") || actions.find((h) => act(h) === "approve-contract");
+    const rest = actions.filter((h) => h !== primary);
+    if (rest.length <= 2) return `<div class="actions">${actions.join("")}</div>`;
+    const G = [["مالی", ["opening", "contract-report", "period-statement", "set-hold", "vat-exempt"]], ["اسناد", ["new-proforma", "new-invoice", "print-contract"]],
+      ["قرارداد", ["edit-contract", "amend", "renew"]], ["", ["terminate"]]];
+    const used = new Set();
+    const groups = G.map(([t, keys]) => { const hs = rest.filter((h) => keys.includes(act(h))); hs.forEach((h) => used.add(h)); return [t, hs]; });
+    const other = rest.filter((h) => !used.has(h));
+    if (other.length) groups.splice(3, 0, ["سایر", other]);
+    // the real buttons stay in the page (hidden) so the page's own click handler runs them; the sheet shows copies that point at them
+    let k = 0; const src = [];
+    const sheetHtml = groups.filter(([, hs]) => hs.length).map(([t, hs]) => `${t ? `<div class="menu-group">${t}</div>` : `<div class="menu-sep"></div>`}<div class="menu-acts">${hs.map((h) => {
+      const i = k++; src.push(h.replace(/^<button /, `<button data-mi="${i}" `));
+      return h.replace(/^<button /, `<button data-menu="${i}" `).replace(/ data-act="[^"]+"/, "").replace(/ btn small/, " btn"); }).join("")}</div>`).join("");
+    return `<div class="actions">${primary || ""}<button class="btn secondary" data-act="contract-menu">کارهای دیگر…</button></div><div class="menu-src" hidden>${src.join("")}</div><template id="contract-menu">${sheetHtml}</template>`;
+  }
+
+  // D-101: the letterhead's line-work (circuit lines with the little standing figures, the two call keys) as an app motif
+  const BRAND_LINES = `<svg class="brand-lines" viewBox="0 30 118 18" preserveAspectRatio="xMaxYMax meet" width="354" height="54" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width=".42" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M2 38.3 H29 L31.6 36.3 H50 L53.6 39.9 H66 M83.6 39.9 H90 L92 37.9 H104 L112.4 46.4"/><path d="M2 39.6 H29.6 L32.2 37.6 H49.4 L53 41.2 H66 M83.6 41.2 H90.6 L92.6 39.2 H103.4 L110.6 46.4"/>
+    <path d="M24 38.3 v-2.2 M25 38.3 v-2.2 M35 36.3 v-2.2 M36 36.3 v-2.2 M40 36.3 v-3.2 M45.5 36.3 v-2.2 M46.5 36.3 v-2.2 M57 39.9 v-2.4 M58 39.9 v-2.4 M62 39.9 v-2.4 M94 37.9 v-2 M95 37.9 v-2 M99.5 37.9 v-2.2 M100.5 37.9 v-2.2 M104.6 38.4 v-2"/>
+    <rect x="66.6" y="32.4" width="7.6" height="7.6" rx="1.3"/><rect x="75.6" y="32.4" width="7.6" height="7.6" rx="1.3"/>
+    <path d="M68.2 38.4 H69.6 L72.4 34.6 H73"/><rect x="77.2" y="33.6" width="2.6" height="5.2" rx=".3"/><path d="M81.4 34 v4.4 M80.8 34.8 l.6-.8 .6 .8 M80.8 37.6 l.6 .8 .6-.8"/></g></svg>`;
   function shell(title, current, body) {
     const p = state.profile;
     return `<header class="topbar"><div class="brand"><img src="icons/mark.png" alt="پایاکو" class="logo"><div><h1>${esc(title)}</h1>
@@ -424,10 +450,12 @@
     const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
     return shell("داشبورد", "dashboard", `
-      <div class="hero"><div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
-      ${waiting}${closeNote}<div class="stats">${stats.join("")}</div>
-      <div class="actions">${quick.join("")}</div>
-      ${isStaff() ? `<div class="row" style="margin-top:10px"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
+      <div class="hero">${BRAND_LINES}<div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
+      <div class="dash${closeNote ? " has-side" : ""}"><div class="dash-main">
+      ${isStaff() ? `<div class="row dash-search"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
+      <div class="actions dash-quick">${quick.join("")}</div>
+      ${waiting}<div class="stats">${stats.join("")}</div></div>
+      ${closeNote ? `<aside class="dash-side"><div class="section-title"><h2>یادآوری‌ها</h2></div><div class="reminders">${closeNote}</div></aside>` : ""}</div>
       <div class="section-title"><h2>خرابی‌های باز</h2><a href="#/faults" class="small">همه</a></div>
       ${urgent.length ? urgent.map(faultCard).join("") : `<div class="card empty">خرابی بازی وجود ندارد</div>`}`);
   }
@@ -679,7 +707,7 @@
         ${prev ? `<div class="small muted">دوره قبل: <a href="#/contract/${prev.id}">قرارداد ${esc(fa(prev.contract_code))}</a></div>` : ""}
         ${hold && hold.billing_hold && isStaff() ? `<div class="error-box" style="margin:8px 0">صورتحساب این قرارداد معلق است: ${esc(hold.billing_hold_reason || "")}<div class="small">سرویس‌ها ثبت می‌شوند ولی صورتحساب صادر نمی‌شود؛ با رفع تعلیق، صورتحساب‌های عقب‌افتاده صادر می‌شوند.</div>
           ${role() === "CEO" ? `<div class="actions"><button class="btn ok small" data-act="release-hold" data-id="${id}">رفع تعلیق و صدور صورتحساب‌ها</button></div>` : ""}</div>` : ""}
-        <div style="margin:8px 0" class="${c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : ""}">مانده: ${money(Math.abs(c.balance_rial))}</div>
+        <div class="big-balance ${c.balance_rial > 0 ? "debt" : c.balance_rial < 0 ? "credit" : ""}"><span>${c.balance_rial > 0 ? "بدهی" : c.balance_rial < 0 ? "بستانکاری" : "مانده"}</span>${money(Math.abs(c.balance_rial))}</div>
         <dl class="kv"><dt>مشتری</dt><dd>${esc(c.customer_name || "—")}</dd>
         <dt>مدیر ساختمان</dt><dd>${esc(c.manager_name || "—")} ${c.manager_mobile ? `<a href="tel:${esc(c.manager_mobile)}" class="ltr">${esc(fa(c.manager_mobile))}</a>` : ""}</dd>
         <dt>مدت</dt><dd>${jdate(c.start_date)} تا ${jdate(c.end_date)}</dd>
@@ -688,7 +716,7 @@
         <dt>سرویس در ماه</dt><dd>${fa(c.services_per_month)}</dd>
         ${isStaff() ? `<dt>ارزش افزوده</dt><dd>${c.vat_exempt ? `<span class="badge info">معاف</span>` : "۱۰٪ روی صورتحساب‌ها"}</dd>` : ""}
         ${c.terminated_at ? `<dt>فسخ</dt><dd class="debt">${jdate(c.terminated_at)}${c.termination_reason ? " · " + esc(c.termination_reason) : ""}</dd>` : ""}</dl>
-        <div class="actions">${actions.join("")}</div></div>
+        ${contractActionsHtml(actions)}</div>
 
       ${signHtml}${insHtml}
       <div class="section-title"><h2>فایل‌های قرارداد</h2>${isStaff() ? `<button class="btn small secondary" data-act="attach" data-id="${id}">+ پیوست</button>` : ""}</div>
@@ -3183,6 +3211,9 @@
     }
     if (act === "report-csv") reportCsv();
     if (act === "month-archive") sheetMonthArchive();
+    if (act === "contract-menu") { const tpl = document.getElementById("contract-menu");
+      sheet(`<h3>کارهای قرارداد</h3><div class="menu">${tpl ? tpl.innerHTML : ""}</div><div class="actions"><button class="btn secondary" data-close>بستن</button></div>`, (m, close) => {
+        m.addEventListener("click", (ev) => { const b = ev.target.closest("[data-menu]"); if (!b) return; close(); const orig = document.querySelector(`.menu-src [data-mi="${b.dataset.menu}"]`); if (orig) orig.click(); }); }); }
     if (act === "sign-step") signStep(Number(el.dataset.id), el.dataset.step).catch((er) => toast(er.message));
     if (act === "ins-new") sheetInsurance({ elevatorId: Number(el.dataset.e), contractId: Number(el.dataset.c), fromId: el.dataset.last ? Number(el.dataset.last) : null }).catch((er) => toast(er.message));
     if (act === "ins-edit") sheetInsurance({ id: Number(el.dataset.id), contractId: Number(el.dataset.c) }).catch((er) => toast(er.message));

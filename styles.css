@@ -557,3 +557,60 @@ a.nima-credit { text-decoration: none; }
 
 /* D-98: search box above contract pickers */
 .csel-q { margin-bottom: 6px; }
+
+/* ===== v2.35 (D-101): calmer surfaces, one primary action, letterhead line-work =====
+   - flat brand colours (no gradients), surfaces separated by a tone step instead of hairline borders and shadows
+   - cards: small radius; buttons: fully round like the elevator call keys
+   - the letterhead's circuit lines with the little figures run along the dashboard banner */
+:root { --bg: #eef2ef; --surface: #ffffff; --surface-2: #e6ece7; --muted: #4b5a6b; --line: #dbe3dd; --radius: 6px; --shadow: none; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0a1210; --surface: #121c19; --surface-2: #1a2723; --line: #24332e; --muted: #a4b3ad; }
+}
+.card, .stat { border: 0; box-shadow: none; border-radius: var(--radius); }
+.btn, .btn.secondary, .btn.small { border-radius: 999px; }
+.btn.secondary { border: 0; background: var(--surface-2); }
+.btn.secondary:hover { background: color-mix(in srgb, var(--brand) 12%, var(--surface-2)); }
+.topbar { border-bottom: 0; background: var(--bg); }
+.section-title h2 { font-size: 17px; font-weight: 800; }
+.small.muted, .muted { color: var(--muted); }
+
+/* dashboard banner: flat green + the letterhead line-work at the bottom edge */
+.hero { background: var(--brand); padding-bottom: 58px; }
+.hero .brand-lines { position: absolute; inset-inline-start: 8px; bottom: 6px; height: 48px; width: auto; max-width: calc(100% - 16px); color: rgba(255, 255, 255, .55); pointer-events: none; }
+@media (min-width: 1024px) { .hero { padding-bottom: 66px; } .hero .brand-lines { height: 58px; } }
+.hero-txt, .floor-ind { position: relative; z-index: 1; }
+@media (prefers-color-scheme: dark) { .hero { background: #1f6d2e; } }
+
+/* dashboard: search and quick actions first, the waiting list, the numbers; reminders as one quiet column */
+.dash-search { margin: 0 0 10px; }
+.dash-quick { margin: 0 0 12px; }
+.pending-card { border: 0 !important; background: var(--surface); padding-top: 14px; }
+.pending-card .item-title { font-size: 17px; font-weight: 800; }
+.pending-row .badge.warn { min-width: 28px; text-align: center; font-weight: 800; background: var(--yellow); color: #3b2a00; }
+.reminders { display: flex; flex-direction: column; gap: 2px; border-radius: var(--radius); overflow: hidden; }
+.reminders > .card { border: 0 !important; border-radius: 0; margin: 0; background: var(--surface); padding: 12px 14px; }
+.reminders > .card .item-title { font-size: 14.5px; }
+.dash-side .section-title { margin-top: 14px; }
+@media (min-width: 1024px) {
+  .dash.has-side { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: 0 18px; align-items: start; }
+  .dash-side .section-title { margin-top: 0; }
+  .dash .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* contract page: grouped "more actions" sheet */
+.menu-group { font-size: 13px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
+.menu-sep { height: 1px; background: var(--line); margin: 16px 0 10px; }
+.menu-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.menu-acts .btn { flex: 1 1 calc(50% - 8px); min-height: 44px; justify-content: center; }
+@media (max-width: 1023px) {
+  .dash-quick { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin-inline: -16px; padding-inline: 16px; }
+  .dash-quick::-webkit-scrollbar { display: none; }
+  .dash-quick .btn { flex: 0 0 auto; white-space: nowrap; }
+}
+/* alert cards (inline border colour = meaning): keep the meaning as a thick edge instead of a hairline frame */
+.card[style*="border-color"] { border-inline-start: 4px solid; }
+.reminders > .card[style*="border-color"] { border-inline-start: 4px solid !important; }
+.big-balance { margin: 10px 0 12px; font-size: 26px; font-weight: 800; line-height: 1.3; }
+.big-balance > span { display: block; font-size: 13px; font-weight: 600; color: var(--muted); }
+.big-balance .amount { font-size: 26px; font-weight: 800; color: inherit; }
+.big-balance .amount .rial { font-size: 12.5px; font-weight: 500; }

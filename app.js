@@ -2134,8 +2134,9 @@
     const c = d.company || {};
     const items = d.items || [];
     const paid = (d.payments || []).reduce((a, p) => a + Number(p.amount), 0);
-    const bal = Number(d.account_balance || 0);
-    const payable = Math.max(bal, 0);
+    const bal = Number(d.account_balance || 0), st = d.type === "statement";
+    const invRem = d.status === "cancelled" ? 0 : Math.max(Number(d.remaining ?? (Number(d.total) - paid)), 0), other = bal - invRem;
+    const payable = st ? Math.max(bal, 0) : invRem; // D-93
     const copyBtn = (val, label) => `<button type="button" class="doc-copy no-print" data-act="copy" data-val="${esc(val)}" aria-label="کپی ${esc(label)}">کپی</button>`;
     const bankRow = (label, val, shown, ltr = true) => val ? `<div class="doc-bank-row"><span class="doc-bank-label">${label}</span><bdi dir="${ltr ? "ltr" : "rtl"}" class="doc-bank-val">${shown}</bdi>${copyBtn(val, label)}</div>` : "";
     const contacts = [
@@ -2164,11 +2165,13 @@
       </tbody><tfoot>
         ${Number(d.discount) ? `<tr><td colspan="2">جمع</td><td class="n">${rial(d.subtotal)}</td></tr><tr><td colspan="2">تخفیف</td><td class="n">−${rial(d.discount)}</td></tr>` : ""}
         <tr class="strong"><td colspan="2">مبلغ این ${d.type === "statement" ? "صورتحساب" : "سند"}</td><td class="n">${rial(d.total)}</td></tr>
-        ${d.previous_balance !== null && d.previous_balance !== undefined && Number(d.previous_balance) !== 0 ? `<tr><td colspan="2">مانده‌ی حساب پیش از این سند ${Number(d.previous_balance) < 0 ? "(بستانکار)" : ""}</td><td class="n">${rial(Math.abs(d.previous_balance))}</td></tr>` : ""}
+        ${st && d.previous_balance !== null && d.previous_balance !== undefined && Number(d.previous_balance) !== 0 ? `<tr><td colspan="2">مانده‌ی حساب پیش از این سند ${Number(d.previous_balance) < 0 ? "(بستانکار)" : ""}</td><td class="n">${rial(Math.abs(d.previous_balance))}</td></tr>` : ""}
         ${paid ? `<tr><td colspan="2">پرداخت‌شده بابت این سند</td><td class="n">−${rial(paid)}</td></tr>` : ""}
-        <tr class="doc-payable"><td colspan="2">${bal < 0 ? "مانده‌ی بستانکاری شما" : "مبلغ قابل پرداخت (مانده‌ی فعلی حساب)"}</td><td class="n">${rial(Math.abs(bal))}</td></tr>
+        ${st ? `<tr class="doc-payable"><td colspan="2">${bal < 0 ? "مانده‌ی بستانکاری شما" : "مبلغ قابل پرداخت (مانده‌ی فعلی حساب)"}</td><td class="n">${rial(Math.abs(bal))}</td></tr>`
+          : `<tr class="doc-payable"><td colspan="2">مبلغ قابل پرداخت این فاکتور</td><td class="n">${rial(invRem)}</td></tr>`}
       </tfoot></table>
-      <div class="doc-words">${payable ? `مبلغ قابل پرداخت به حروف: <b>${numWords(payable)} ریال</b> (معادل ${num(Math.round(payable / 10))} تومان)` : bal < 0 ? "حساب شما بستانکار است و از صورتحساب‌های بعدی کسر می‌شود." : "حساب شما تسویه است. سپاسگزاریم."}</div>
+      <div class="doc-words">${payable ? `مبلغ قابل پرداخت به حروف: <b>${numWords(payable)} ریال</b> (معادل ${num(Math.round(payable / 10))} تومان)` : !st ? "این فاکتور تسویه است. سپاسگزاریم." : bal < 0 ? "حساب شما بستانکار است و از صورتحساب‌های بعدی کسر می‌شود." : "حساب شما تسویه است. سپاسگزاریم."}</div>
+      ${!st && other ? `<div class="doc-notes">${other > 0 ? `مانده‌ی دیگر حساب شما (جدا از این فاکتور و قابل پرداخت جداگانه): <b>${rial(other)} ریال</b>` : `بستانکاری دیگر حساب شما: <b>${rial(-other)} ریال</b>`} · مانده‌ی کل حساب: ${rial(Math.abs(bal))} ریال${bal < 0 ? " بستانکار" : ""}</div>` : ""}
       ${d.notes ? `<div class="doc-notes">${txt(d.notes)}</div>` : ""}
       ${(d.payments || []).length ? `<div class="doc-pay-title">پرداخت‌های ثبت‌شده بابت این سند</div><table class="doc-items doc-pay"><thead><tr><th style="width:2.2em">ردیف</th><th>تاریخ و روش</th><th>پیگیری</th><th style="width:9.5em">مبلغ (ریال)</th></tr></thead><tbody>
         ${(d.payments || []).map((p, k) => `<tr><td class="c">${fa(k + 1)}</td><td>${jdate(p.date)} · ${esc(METHOD[p.method] || "")}</td><td><bdi dir="ltr">${esc(fa(p.tracking || "—"))}</bdi></td><td class="n">${rial(p.amount)}</td></tr>`).join("")}
@@ -2727,15 +2730,21 @@
     const itemsSum = items.reduce((a, x) => a + (x.dc === "credit" ? -1 : 1) * Number(x.amount), 0);
     const bal = Number(d.account_balance || 0);
     const ins = d.type === "insurance_invoice";
+    // D-93: an invoice asks only for its own amount; the rest of the account is shown beside it, never added to it
+    const invPaid = (d.payments || []).reduce((a, p) => a + Number(p.amount), 0), invRem = d.status === "cancelled" ? 0 : Math.max(Number(d.remaining ?? (Number(d.total) - invPaid)), 0);
+    const other = bal - invRem, payNow = st ? bal : invRem;
     const head = `<div class="pp-title"><h1>${st ? "صورتحساب سرویس و نگهداری" : ins ? "فاکتور بیمه‌ی آسانسور" : "فاکتور تعمیرات"}${d.proforma_number ? `<small>بر اساس پیش‌فاکتور ${esc(fa(d.proforma_number))}</small>` : ""}</h1><span class="pp-chip">کد اشتراک ${esc(fa((d.contract && d.contract.subscription) || ""))}</span></div><div class="pp-rule"></div>
       ${ppInfo([[["مشترک", esc((d.building && d.building.name) || (d.customer && d.customer.name) || "")], ["شماره قرارداد", esc(fa((d.contract && d.contract.code) || ""))]], ...(d.building && d.building.address ? [[["نشانی", esc(fa(d.building.address))]]] : [])])}`;
     const sums = [["جمع", num(itemsSum)], ...(Number(d.discount) ? [["تخفیف", "−" + num(d.discount)]] : []), ...(tax ? [["مالیات بر ارزش افزوده", num(tax)]] : d.vat_exempt ? [["مالیات بر ارزش افزوده", "معاف"]] : []),
-      ["مبلغ این " + (st ? "صورتحساب" : "فاکتور"), num(d.total), "s"], ...(Number(d.previous_balance) ? [["مانده‌ی حساب پیش از این سند" + (Number(d.previous_balance) < 0 ? " (بستانکار)" : ""), num(Math.abs(d.previous_balance))]] : []),
-      [bal < 0 ? "مانده‌ی بستانکاری شما" : "مبلغ قابل پرداخت (مانده‌ی فعلی حساب)", num(Math.abs(bal)), "pay"]];
+      ["مبلغ این " + (st ? "صورتحساب" : "فاکتور"), num(d.total), "s"],
+      ...(st ? [...(Number(d.previous_balance) ? [["مانده‌ی حساب پیش از این سند" + (Number(d.previous_balance) < 0 ? " (بستانکار)" : ""), num(Math.abs(d.previous_balance))]] : []),
+        [bal < 0 ? "مانده‌ی بستانکاری شما" : "مبلغ قابل پرداخت (مانده‌ی فعلی حساب)", num(Math.abs(bal)), "pay"]]
+        : [...(invPaid ? [["پرداخت‌شده بابت این فاکتور", "−" + num(invPaid)]] : []), ["مبلغ قابل پرداخت این فاکتور", num(invRem), "pay"]])];
+    const otherNote = !st && other ? `<div class="pp-words">${other > 0 ? `مانده‌ی دیگر حساب شما (جدا از این فاکتور و قابل پرداخت جداگانه): <b>${num(other)} ریال</b>` : `بستانکاری دیگر حساب شما: <b>${num(-other)} ریال</b>`} · مانده‌ی کل حساب: ${num(Math.abs(bal))} ریال${bal < 0 ? " بستانکار" : ""}</div>` : "";
     const code = d.public_token ? "" : "";
     paginate(host, { no: d.number, date: jdate(d.issue_date), form: st ? "PY-FO-PC-G04" : ins ? "PY-FO-PC-G09" : "PY-FO-PC-G06", rev: 0, issued: "۱۴۰۵/۰۸/۰۹" }, c, head, [
       (st ? tbl([["ردیف", "9mm"], ["شرح"], ["مبلغ (ریال)", "34mm"]], rows) : tbl([["ردیف", "9mm"], ["شرح کالا / خدمات"], ["تعداد", "14mm"], ["واحد", "14mm"], ["فی (ریال)", "26mm"], ["مبلغ (ریال)", "28mm"]], rows)) + sumTbl(sums),
-      bal > 0 ? `<div class="pp-words">به حروف: <b>${numWords(bal)} ریال</b> (معادل ${num(Math.round(bal / 10))} تومان)</div>` : "",
+      payNow > 0 ? `<div class="pp-words">به حروف: <b>${numWords(payNow)} ریال</b> (معادل ${num(Math.round(payNow / 10))} تومان)</div>` : "", otherNote,
       `<div class="pp-cols">${ppBank(c)}<div class="pp-box"><h3>اعلام واریز آنلاین</h3><div class="small">پس از واریز، از لینکی که برایتان پیامک شده شماره پیگیری را اعلام کنید.</div></div></div>`,
       st ? `<div class="pp-stamp">این سند در سامانه‌ی پایاکو صادر شده است.</div>` : `<div class="pp-signs"><div><b>تحویل‌گیرنده (مدیر ساختمان)</b>نام، تاریخ و امضا</div><div><b>پایاکو</b>مهر و امضا</div></div>`].filter(Boolean), {});
     return code;

@@ -392,7 +392,8 @@
     const [ps, qs, chq] = await Promise.all([api("install_projects?select=id,title,client_name,city,stage,updated_at&order=updated_at.desc"),
       api("install_quotes?select=id,project_id,status,valid_until,document_number,options&order=id.desc"), dueCheques(7)]);
     const now = new Date(), by = (k) => ps.filter((p) => p.stage === k).length;
-    const drafts = qs.filter((q) => q.status === "draft"), valid = qs.filter((q) => q.status === "issued" && new Date(q.valid_until) > now);
+    const open = new Set(ps.filter((p) => ["estimate", "quoted"].includes(p.stage)).map((p) => p.id));
+    const drafts = qs.filter((q) => q.status === "draft" && open.has(q.project_id)), valid = qs.filter((q) => q.status === "issued" && open.has(q.project_id) && new Date(q.valid_until) > now);
     const st = (label, v, cls, href) => `<div class="stat ${cls} tap" data-act="go" data-href="${href}"><div class="label">${label}</div><div class="value">${num(v)}</div></div>`;
     const draftSet = new Set(drafts.map((q) => q.project_id));
     const card = (p) => { const s2 = IP_STAGE[p.stage] || [p.stage, ""];
@@ -2963,7 +2964,7 @@
      step 1: project file + internal estimate + numbered price quotation (code 10) sent as a link and printed.
      Later steps (installation contract, procurement, installation, handover, service contract) attach to the project. */
   const IP_STAGE = { estimate: ["برآورد", "warn"], quoted: ["پیشنهاد داده شد", "info"], won: ["قرارداد بسته شد", "ok"], lost: ["از دست رفت", ""], cancelled: ["لغو", ""] };
-  const IQ_STATE = (q) => q.status === "draft" ? ["پیش‌نویس", "warn"] : q.status === "cancelled" ? ["لغو", "danger"] : q.status === "superseded" ? ["جایگزین شد", ""]
+  const IQ_STATE = (q, pstage) => pstage === "won" && q.status === "issued" ? ["پذیرفته شد (قرارداد)", "ok"] : q.status === "draft" ? ["پیش‌نویس", "warn"] : q.status === "cancelled" ? ["لغو", "danger"] : q.status === "superseded" ? ["جایگزین شد", ""]
     : (q.expired || (q.valid_until && new Date(q.valid_until) < new Date())) ? ["اعتبار تمام شد", ""] : ["معتبر", "ok"];
   const IQ_SPEC = { drive: ["کششی", "هیدرولیک"], room: ["موتورخانه‌دار", "بدون موتورخانه"], usage: ["مسافربر", "باربر", "تخت‌بر", "خودروبر"], speed: ["0.63", "1", "1.6", "2", "2.5"], susp: ["2:1", "1:1"] };
   const DOOR_TXT = ["", "تک درب", "دو درب", "سه درب"];
@@ -3079,7 +3080,7 @@
       ceo ? api(`install_costs?project_id=eq.${id}&active=eq.true&select=*&order=spent_on.desc,id.desc`) : [],
       ceo ? api(`install_receipts?project_id=eq.${id}&active=eq.true&select=*&order=received_on.desc,id.desc`) : []]);
     const k = ks[0] || null;
-    const qcard = (q) => { const s = IQ_STATE(q);
+    const qcard = (q) => { const s = IQ_STATE(q, p.stage);
       return `<div class="card tap" data-act="go" data-href="#/iq/${q.id}"><div class="item-head"><div><div class="item-title">${q.document_number ? `پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number))}</bdi>` : "پیش‌نویس پیشنهاد"} · نسخه ${fa(q.version)}</div>
         <div class="small muted">${q.issued_at ? `صدور ${jtime(q.issued_at)} · اعتبار تا ${jtime(q.valid_until)}` : `آخرین تغییر ${jtime(q.updated_at)}`}</div>
         ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div><span class="badge ${s[1]}">${s[0]}</span></div></div>`; };
@@ -3751,16 +3752,17 @@
   async function viewInstallQuote(id) {
     const [q] = await api(`install_quotes?id=eq.${id}&select=*,install_projects(*)`);
     if (!q) return shell("پیشنهاد قیمت", "more", `<div class="card empty">پیدا نشد</div>`);
-    const p = q.install_projects || {}, s = IQ_STATE(q);
+    const p = q.install_projects || {}, s = IQ_STATE(q, p.stage), canExt = q.status === "issued" && ["estimate", "quoted"].includes(p.stage);
     if (q.status !== "draft") {
       const acts = [`<button class="btn" data-act="iq-print" data-id="${id}">چاپ / PDF</button>`];
       if (q.status === "issued" && !(new Date(q.valid_until) < new Date())) acts.push(`<button class="btn" data-act="iq-sms" data-id="${id}">ارسال پیامک به کارفرما</button>`);
+      if (canExt) acts.push(`<button class="btn secondary" data-act="iq-extend" data-id="${id}" data-h="${q.valid_hours || 24}">تمدید اعتبار (همین قیمت)</button>`);
       if (q.status === "issued") acts.push(`<button class="btn secondary" data-act="iq-share" data-code="${esc(q.short_code)}" data-no="${esc(q.document_number)}">لینک برای کارفرما</button>`);
       acts.push(`<button class="btn secondary" data-act="iq-copy" data-id="${id}">نسخه‌ی جدید از روی این</button>`);
       if (q.status === "issued") acts.push(`<button class="btn secondary danger-text" data-act="iq-cancel" data-id="${id}">لغو</button>`);
       return shell("پیشنهاد قیمت نصب", "more", `<a href="#/install/${p.id}" data-act="back" class="small">→ بازگشت</a>
         <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)} · نسخه ${fa(q.version)}</div><div class="small muted">${esc(q.recipient || "")}</div>
-          <div class="small">صدور ${jtime(q.issued_at)} · اعتبار ${fa(q.valid_hours)} ساعت تا ${jtime(q.valid_until)}</div>${q.cancel_note ? `<div class="small debt">لغو: ${esc(q.cancel_note)}</div>` : ""}</div><span class="badge ${s[1]}">${s[0]}</span></div>
+          <div class="small">صدور ${jtime(q.issued_at)} · اعتبار ${fa(q.valid_hours)} ساعت تا ${jtime(q.valid_until)}</div>${q.extended_count ? `<div class="small muted">${fa(q.extended_count)} بار تمدید شد · آخرین تمدید ${jtime(q.extended_at)}</div>` : ""}${q.cancel_note ? `<div class="small debt">لغو: ${esc(q.cancel_note)}</div>` : ""}</div><span class="badge ${s[1]}">${s[0]}</span></div>
           <table class="list" style="margin-top:8px">${(q.options || []).map((o) => `<tr><td>${esc(o.label)}<div class="small muted">پیش از مالیات ${num(o.amount_rial)} ریال${q.vat_exempt ? " · معاف از ارزش افزوده" : ` · ارزش افزوده ${num(o.vat_rial)}`}</div></td><td>${money(o.total_rial)}</td></tr>`).join("")}</table>
           <div class="actions">${acts.join("")}</div></div>`);
     }
@@ -3970,6 +3972,8 @@
       toast("پیشنهاد قیمت صادر شد"); route();
     });
     if (act === "iq-print") printInstallQuote(id).catch((er) => toast(er.message));
+    if (act === "iq-extend") { const h = prompt("قیمت‌ها تغییر نکرده است؟ این پیشنهاد با همین شماره و همین مبلغ‌ها از همین حالا چند ساعت دیگر معتبر بماند؟", fa(el.dataset.h || 24));
+      if (h !== null) { const n = Number(toEn(h).replace(/\D/g, "")); if (!n) toast("مدت را به ساعت وارد کنید"); else rpc("extend_install_quote", { p_id: id, p_hours: n }).then((u) => { toast(`تمدید شد تا ${jtime(u)}`); route(); }).catch((er) => toast(er.message)); } }
     if (act === "iq-sms") sendInstallQuoteSms(id).catch((er) => toast(er.message));
     if (act === "iq-share") {
       const url = `${location.origin}${location.pathname}?q=${el.dataset.code}`, text = `پیشنهاد قیمت آسانسور پایاکو شماره ${fa(el.dataset.no)}:`;

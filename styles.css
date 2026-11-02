@@ -584,6 +584,57 @@ svg.ch { width: 100%; height: auto; display: block; }
 .ch-legend i.lg-plan { border-top: 2px dashed var(--muted); }
 table.mx tbody tr.tap:hover td, table.mx tbody tr.tap:hover th { background: var(--surface-2); }
 
+
+/* ---------- online control forms (D-106) */
+.if-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.if-row.col { flex-direction: column; align-items: stretch; }
+.if-row > * { min-width: 0; max-width: 100%; }
+#if-form .card { min-width: 0; overflow: hidden; }
+.card > .if-row:first-of-type { border-top: 0; }
+.if-l { flex: 1 1 160px; font-size: .9rem; line-height: 1.6; }
+.if-in { display: flex; align-items: center; gap: 6px; flex: 0 1 200px; }
+.if-in input { min-width: 0; }
+.if-u { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.if-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.if-chips.col { flex-direction: column; }
+.if-chips button { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 7px 13px; font: inherit; font-size: .85rem; min-height: 36px; }
+.if-chips button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+.if-chips button.bad.on { background: var(--danger); border-color: var(--danger); }
+.if-chips button:disabled { opacity: .75; }
+.if-note { font-size: .85rem; color: var(--muted); line-height: 1.8; padding: 6px 0; }
+.if-n { width: 56px; display: inline-block; margin-inline-start: 6px; }
+.if-tw { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table.if-t { border-collapse: collapse; font-size: .78rem; }
+table.if-t th, table.if-t td { border: 1px solid var(--line); padding: 3px; text-align: center; }
+table.if-t th:first-child { white-space: nowrap; padding-inline: 6px; }
+table.if-t td input, table.if-t td select { width: 64px; min-height: 32px; padding: 2px 4px; font-size: .8rem; }
+.if-li { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.if-li span { width: 20px; color: var(--muted); font-size: .8rem; }
+.if-ser { display: grid; grid-template-columns: 1fr; gap: 4px; padding: 6px 0; border-top: 1px dashed var(--line); }
+.ip-find { margin: 6px 0 4px; }
+.ip-find input { width: 100%; }
+.cl-row { padding: 8px; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.cl-row .row { margin-top: 6px; gap: 6px; }
+.cl-row .row input { flex: 1; min-width: 0; }
+.cl-foot { justify-content: space-between; align-items: center; }
+/* printed form */
+.if-ph h1 { font-size: 15pt; margin: 0 0 2px; }
+table.if-pt { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 3px 0; }
+table.if-pt th, table.if-pt td { border: 1px solid #9aa5a0; padding: 2px 5px; text-align: center; }
+table.if-pt.if-meta td { text-align: right; }
+table.if-pt td.n { width: 22px; }
+.if-ps h3 { font-size: 10.5pt; margin: 6px 0 2px; display: flex; gap: 6px; align-items: center; }
+.if-ps h3 span { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: #2e8b3e; color: #fff; font-size: 8pt; }
+.if-pr { display: flex; justify-content: space-between; gap: 8px; font-size: calc(9pt * var(--fit, 1)); padding: 1.5px 0; border-bottom: 1px dotted #c9d1cd; }
+.if-po { display: flex; gap: 8px; flex-wrap: wrap; }
+.if-po i { font-style: normal; color: #6b7a74; white-space: nowrap; }
+.if-po i.on { color: #0f172a; font-weight: 700; }
+.if-pn { font-size: calc(8.5pt * var(--fit, 1)); line-height: 1.7; margin: 3px 0; }
+.if-blank { display: inline-block; min-width: 40px; border-bottom: 1px dotted #9aa5a0; }
+.if-psig { display: flex; gap: 10px; margin-top: 10px; }
+.if-psig > div { flex: 1; border: 1px solid #9aa5a0; border-radius: 6px; padding: 6px; min-height: 64px; font-size: 9pt; display: flex; flex-direction: column; gap: 2px; }
+.if-psig span { margin-top: auto; color: #6b7a74; font-size: 8pt; }
+
 @media print {
   body { background: #fff !important; }
   .topbar, .tabbar, .no-print, #toast, .sheet-backdrop, .side-brand, .side-foot, .refresh-btn, .page-credit, .pp-bar, a[data-act="back"] { display: none !important; }

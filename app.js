@@ -390,13 +390,13 @@
       return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div><div class="small muted">${esc(p.client_name)} · ${esc(p.city || "")} · ${jdate(p.updated_at)}</div></div>
         <div style="text-align:left"><span class="badge ${s2[1]}">${s2[0]}</span>${draftSet.has(p.id) ? `<span class="badge warn">پیش‌نویس باز</span>` : ""}</div></div></div>`; };
     return shell("داشبورد", "dashboard", `${areaSwitch()}
-      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="go" data-href="#/install">همه‌ی پروژه‌ها</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
+      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="go" data-href="#/install">همه‌ی پروژه‌ها</button><button class="btn secondary" data-act="go" data-href="#/install-matrix">ماتریس پیشرفت فیزیکی</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
       <div class="stats">${st("در مرحله‌ی برآورد", by("estimate"), by("estimate") ? "warn" : "calm", "#/install")}${st("پیشنهاد داده شده", by("quoted"), "tone-info", "#/install")}
         ${st("قرارداد بسته شد", by("won"), "tone-brand", "#/install")}${st("پیشنهاد معتبر (منتظر پاسخ)", valid.length, valid.length ? "tone-brand" : "calm", "#/install")}</div>
       ${drafts.length ? `<div class="hint">${fa(drafts.length)} پیش‌نویس پیشنهاد هنوز صادر نشده است.</div>` : ""}
       <div class="section-title"><h2>آخرین پروژه‌ها</h2><a href="#/install" class="small">همه</a></div>
       ${ps.length ? ps.slice(0, 8).map(card).join("") : `<div class="card empty">هنوز پروژه‌ی نصبی ثبت نشده</div>`}
-      <div class="hint">قدم‌های بعدی بخش نصب (قرارداد نصب، فرم‌های کنترل پروژه، پیشرفت فیزیکی) به همین بخش اضافه می‌شوند.</div>`);
+      <div class="hint">قرارداد نصب قدم بعدی این بخش است و به همین پرونده‌ها وصل می‌شود.</div>`);
   }
   async function viewDashboard() {
     if (role() === "CEO" && dashArea === "sales") return viewSalesDashboard();
@@ -808,8 +808,8 @@
         <div class="small muted">پیگیری وصول مطالبات</div></div><span>←</span></div></div>` : ""}
       ${can.changeContract() ? `<div class="card tap" data-act="go" data-href="#/renewals"><div class="item-head"><div><div class="item-title">تمدید قراردادها</div>
         <div class="small muted">قراردادهای رو به پایان این ماه و ماه بعد</div></div><span>←</span></div></div>` : ""}
-      ${role() === "CEO" ? `<div class="card tap" data-act="go" data-href="#/install"><div class="item-head"><div><div class="item-title">پروژه‌های نصب</div>
-        <div class="small muted">برآورد و پیشنهاد قیمت نصب آسانسور (فقط مدیرعامل)</div></div><span>←</span></div></div>` : ""}
+      ${canInstall() ? `<div class="card tap" data-act="go" data-href="#/install"><div class="item-head"><div><div class="item-title">پروژه‌های نصب</div>
+        <div class="small muted">${role() === "CEO" ? "پیشنهاد قیمت، کنترل پروژه و پیشرفت فیزیکی" : "کنترل پروژه و پیشرفت فیزیکی نصب"}</div></div><span>←</span></div></div>` : ""}
       ${role() === "CEO" ? `<div class="card tap" data-act="go-reports"><div class="item-head"><div><div class="item-title">گزارش‌های مالی</div>
         <div class="small muted">تراز بازه‌ای، بدهکاران، دریافت‌ها — با خروجی اکسل</div></div><span>←</span></div></div>` : ""}
       ${["CEO", "EMPLOYEE"].includes(role()) ? `<div class="card tap" data-act="go-close"><div class="item-head"><div><div class="item-title">بستن ماه</div>
@@ -2973,12 +2973,13 @@
     const latest = new Map(), drafts = new Set(); qs.forEach((q) => { if (q.status === "draft") drafts.add(q.project_id); else if (!latest.has(q.project_id)) latest.set(q.project_id, q); });
     const card = (p) => { const q = latest.get(p.id), st = IP_STAGE[p.stage] || [p.stage, ""];
       const prices = q ? (q.options || []).map((o) => Number(o.total_rial || o.amount_rial)) : [];
-      return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div>
+      return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${p.install_code ? `<span class="badge ok">${fa(p.install_code)}</span> ` : ""}${esc(p.title)}</div>
         <div class="small muted">${esc(p.client_name)} · ${esc(p.city || "")}${q ? ` · پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number || ""))}</bdi>` : ""}</div></div>
         <div style="text-align:left">${prices.length ? money(Math.min(...prices)) : ""}<span class="badge ${st[1]}">${st[0]}</span>${drafts.has(p.id) ? `<span class="badge warn">پیش‌نویس باز</span>` : ""}</div></div></div>`; };
+    const ceo = role() === "CEO";
     return shell("پروژه‌های نصب", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
-      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
-      <div class="hint">فقط مدیرعامل این بخش را می‌بیند. هر پروژه پرونده‌ی خودش را دارد؛ مرحله‌ی اول برآورد و پیشنهاد قیمت است و مراحل بعدی نصب بعداً به همین پرونده وصل می‌شوند.</div>
+      <div class="page-actions">${ceo ? `<button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button>` : ""}<button class="btn secondary" data-act="go" data-href="#/install-matrix">ماتریس پیشرفت فیزیکی</button>${ceo ? `<button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button>` : ""}</div>
+      <div class="hint">${ceo ? "پیشنهاد قیمت و مبلغ‌ها فقط برای مدیرعامل است؛ مدیر فنی پروژه‌ها و مراحل نصب را می‌بیند و ثبت می‌کند." : "مراحل نصب هر دستگاه را از صفحه‌ی پروژه ثبت کنید."} هر پروژه پرونده‌ی خودش را دارد: پیشنهاد قیمت، دستگاه‌ها، ۱۵ مرحله‌ی کنترل پروژه و صورتجلسه‌های تحویل کالا.</div>
       ${ps.length ? ps.map(card).join("") : `<div class="card empty">هنوز پروژه‌ای ثبت نشده</div>`}`);
   }
   // client history by mobile (D-104): earlier projects/quotations for the same numbers and how many became contracts
@@ -3037,23 +3038,338 @@
       api(`install_project_contacts?project_id=eq.${id}&active=eq.true&select=name,mobile,role&order=sort`)]);
     if (!p) return shell("پروژه‌ی نصب", "more", `<div class="card empty">پیدا نشد</div>`);
     const mobs = cts.map((c) => c.mobile).filter(Boolean);
-    const hist = mobs.length ? await rpc("install_client_history", { p_mobiles: mobs, p_exclude_project: id }).catch(() => null) : null;
-    const st = IP_STAGE[p.stage] || [p.stage, ""], draft = qs.find((q) => q.status === "draft");
+    const hist = mobs.length && role() === "CEO" ? await rpc("install_client_history", { p_mobiles: mobs, p_exclude_project: id }).catch(() => null) : null;
+    const st = IP_STAGE[p.stage] || [p.stage, ""], draft = qs.find((q) => q.status === "draft"), ceo = role() === "CEO";
+    const [ctl, ks, costs] = await Promise.all([loadControl(id), ceo ? api(`install_contracts?project_id=eq.${id}&active=eq.true&select=*`) : [],
+      ceo ? api(`install_costs?project_id=eq.${id}&active=eq.true&select=*&order=spent_on.desc,id.desc`) : []]);
+    const k = ks[0] || null;
     const qcard = (q) => { const s = IQ_STATE(q);
       return `<div class="card tap" data-act="go" data-href="#/iq/${q.id}"><div class="item-head"><div><div class="item-title">${q.document_number ? `پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number))}</bdi>` : "پیش‌نویس پیشنهاد"} · نسخه ${fa(q.version)}</div>
         <div class="small muted">${q.issued_at ? `صدور ${jtime(q.issued_at)} · اعتبار تا ${jtime(q.valid_until)}` : `آخرین تغییر ${jtime(q.updated_at)}`}</div>
         ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div><span class="badge ${s[1]}">${s[0]}</span></div></div>`; };
     return shell(p.title, "more", `<a href="#/install" data-act="back" class="small">→ بازگشت</a>
-      <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div>
+      <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}${p.install_code ? ` <span class="badge ok">کد نصب ${fa(p.install_code)}</span>` : ""}</div>
         ${(cts.length ? cts : [{ name: p.client_name, mobile: p.client_mobile, role: "کارفرما" }]).map((c) => `<div class="small">${esc(c.name)}${c.role ? ` <span class="muted">(${esc(c.role)})</span>` : ""}${c.mobile ? ` · <a href="tel:${esc(c.mobile)}" class="ltr">${esc(fa(c.mobile))}</a>` : ""}</div>`).join("")}
         <div class="small muted">${esc(p.city || "")}${p.address ? " · " + esc(p.address) : ""}</div>${p.notes ? `<div class="small">${txt(p.notes)}</div>` : ""}</div><span class="badge ${st[1]}">${st[0]}</span></div>
-        <label>مرحله‌ی پروژه</label><div class="row"><select data-f="stage" style="flex:1">${Object.entries(IP_STAGE).map(([k, v]) => `<option value="${k}"${k === p.stage ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
+        ${ceo ? `<label>مرحله‌ی پروژه</label><div class="row"><select data-f="stage" style="flex:1">${Object.entries(IP_STAGE).map(([k, v]) => `<option value="${k}"${k === p.stage ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
         <button class="btn secondary small" data-act="ip-stage" data-id="${id}">ثبت مرحله</button></div>
-        <div class="actions"><button class="btn secondary small" data-act="ip-edit" data-id="${id}">ویرایش اطلاعات</button></div></div>
-      ${hist ? historyHtml(hist) : ""}
-      <div class="section-title"><h2>برآورد و پیشنهاد قیمت</h2></div>
+        <div class="actions"><button class="btn secondary small" data-act="ip-edit" data-id="${id}">ویرایش اطلاعات</button></div>` : ""}</div>
+      ${ceo && hist ? historyHtml(hist) : ""}
+      ${contractHtml(p, k)}
+      ${ceo ? `<div class="section-title"><h2>برآورد و پیشنهاد قیمت</h2></div>
       <div class="page-actions">${draft ? `<button class="btn" data-act="go" data-href="#/iq/${draft.id}">ادامه‌ی پیش‌نویس</button>` : `<button class="btn" data-act="iq-new" data-id="${id}">+ پیشنهاد قیمت جدید</button>`}</div>
-      ${qs.length ? qs.map(qcard).join("") : `<div class="card empty">هنوز برآوردی ثبت نشده</div>`}`);
+      ${qs.length ? qs.map(qcard).join("") : `<div class="card empty">هنوز برآوردی ثبت نشده</div>`}` : ""}
+      ${controlHtml(p, ctl)}
+      ${costsHtml(p, k, costs)}`);
+  }
+  /* ------------------------------------------------------------------ installation project control (D-105)
+     the 15-step workflow of PY-LI-PC-00 per elevator, physical progress (equal weights), scans of the signed
+     paper forms, goods delivery records (G01). CEO and technical manager (REPAIR_MANAGER); prices stay CEO-only. */
+  const canInstall = () => ["CEO", "REPAIR_MANAGER"].includes(role());
+  const ST_STATE = { pending: ["شروع نشده", "", "mx-no"], in_progress: ["در جریان", "info", "mx-on"], approved: ["تأیید شد", "ok", "mx-ok"], rejected: ["عدم تأیید", "danger", "mx-bad"] };
+  const unitPct = (defs, byCode) => { const w = defs.reduce((a, d) => a + Number(d.weight || 1), 0);
+    const done = defs.filter((d) => (byCode[d.code] || {}).status === "approved").reduce((a, d) => a + Number(d.weight || 1), 0);
+    return w ? Math.round((done * 100) / w) : 0; };
+  const nextStage = (defs, byCode) => defs.find((d) => (byCode[d.code] || {}).status !== "approved");
+  const unitName = (u) => `دستگاه ${u.label}${u.title ? ` — ${u.title}` : ""}`;
+  async function uploadInstallFile(projectId, f) {
+    if (f.size > 20 * 1024 * 1024) throw new Error("حجم فایل بیشتر از ۲۰ مگابایت است");
+    const ext = (f.name.match(/\.([A-Za-z0-9]{1,5})$/) || [, "bin"])[1].toLowerCase();
+    const rnd = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const path = `${projectId}/${Date.now()}-${rnd}.${ext}`;
+    const t = await token();
+    const res = await fetch(`${CFG.supabaseUrl}/storage/v1/object/install-files/${path}`, {
+      method: "POST", headers: { apikey: CFG.supabaseKey, Authorization: `Bearer ${t}`, "Content-Type": f.type || "application/octet-stream", "x-upsert": "false" }, body: f });
+    if (!res.ok) { let m = "بارگذاری ناموفق بود"; try { const d = await res.json(); m = d.message || d.error || m; } catch (er) { /* keep */ } throw new Error(/mime|type/i.test(m) ? "فقط PDF یا عکس مجاز است" : m); }
+    return path;
+  }
+  async function loadControl(projectId) {
+    const [defs, units] = await Promise.all([api("install_stage_defs?active=eq.true&select=*&order=sort"), api(`install_units?project_id=eq.${projectId}&active=eq.true&select=*&order=label`)]);
+    const ids = units.map((u) => u.id).join(",");
+    const [stages, files, dlv] = await Promise.all([ids ? api(`install_unit_stages?unit_id=in.(${ids})&select=*`) : [],
+      api(`install_stage_files?project_id=eq.${projectId}&active=eq.true&select=*&order=id.desc`), api(`install_deliveries?project_id=eq.${projectId}&active=eq.true&select=*&order=delivered_on.desc,id.desc`)]);
+    const by = {}; units.forEach((u) => { by[u.id] = {}; }); stages.forEach((s) => { if (by[s.unit_id]) by[s.unit_id][s.stage_code] = s; });
+    return { defs, units, by, files, dlv };
+  }
+  // goods delivered for a stage that this elevator has not passed yet (delivered, not installed)
+  const pendingGoods = (dlv, u, b) => dlv.filter((x) => x.stage_code && (!x.unit_id || x.unit_id === u.id) && (b[x.stage_code] || {}).status !== "approved");
+  function controlHtml(p, c) {
+    const fileCount = (uid, code) => c.files.filter((f) => f.unit_id === uid && f.stage_code === code).length;
+    const unitCard = (u) => { const b = c.by[u.id], pct = unitPct(c.defs, b), nx = nextStage(c.defs, b);
+      const rej = c.defs.filter((d) => (b[d.code] || {}).status === "rejected").length, pg = pendingGoods(c.dlv, u, b);
+      return `<div class="card"><div class="item-head"><div><div class="item-title">${esc(unitName(u))}</div>
+          <div class="small muted">${nx ? `مرحله‌ی جاری: ${fa(nx.code)} · ${esc(nx.title)}` : "همه‌ی مراحل تأیید شد"}</div></div>
+          <div style="text-align:left"><b>${fa(pct)}٪</b>${rej ? `<span class="badge danger">${fa(rej)} عدم تأیید</span>` : ""}</div></div>
+        <div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>
+        <div class="mx-strip" aria-hidden="true">${c.defs.map((d) => `<i class="${ST_STATE[(b[d.code] || {}).status || "pending"][2]}${pg.some((x) => x.stage_code === d.code) ? " mx-dlv" : ""}"></i>`).join("")}</div>
+        ${pg.length ? `<div class="goods-wait"><div class="small"><b>کالای تحویل‌شده، هنوز نصب‌نشده</b></div>${pg.map((x) => { const d = c.defs.find((y) => y.code === x.stage_code);
+          return `<div class="small">${esc(lines(x.items)[0] || "")}${lines(x.items).length > 1 ? ` و ${fa(lines(x.items).length - 1)} قلم دیگر` : ""} · تحویل ${jdate(x.delivered_on)} · مرحله‌ی ${fa(x.stage_code)} (${esc(d ? d.title : "")}) ·
+            ${x.pending_reason ? `علت: ${esc(x.pending_reason)}` : `<span class="debt">علت عدم نصب ثبت نشده</span>`}</div>`; }).join("")}</div>` : ""}
+        <details class="fold"${nx ? "" : ""}><summary class="small">مراحل ۱۵گانه</summary>
+          ${c.defs.map((d) => { const s = b[d.code] || {}, st = ST_STATE[s.status || "pending"], n = fileCount(u.id, d.code);
+            return `<div class="stg tap" data-act="ip-st" data-u="${u.id}" data-c="${d.code}"><span class="stg-no">${fa(d.code)}</span>
+              <div class="stg-t"><div>${esc(d.title)}</div><div class="small muted">${s.visit_date ? jdate(s.visit_date) : ""}${s.inspector ? ` · ${esc(s.inspector)}` : ""}${n ? ` · ${fa(n)} فایل` : ""}</div>
+              ${s.status === "rejected" && s.notes ? `<div class="small debt">${esc(s.notes)}</div>` : ""}</div><span class="badge ${st[1]}">${st[0]}</span></div>`; }).join("")}
+        </details></div>`; };
+    const dlvCard = (x) => { const u = c.units.find((y) => y.id === x.unit_id), n = c.files.filter((f) => f.delivery_id === x.id).length;
+      const targets = u ? [u] : c.units, waiting = x.stage_code && targets.some((t) => (c.by[t.id][x.stage_code] || {}).status !== "approved");
+      const st = !x.stage_code ? ["", ""] : waiting ? ["نصب نشده", "warn"] : ["نصب و تأیید شد", "ok"];
+      return `<div class="card tap" data-act="ip-dlv" data-did="${x.id}"><div class="item-head"><div><div class="item-title">${jdate(x.delivered_on)}${u ? ` · دستگاه ${esc(u.label)}` : ""}${x.stage_code ? ` · مرحله‌ی ${fa(x.stage_code)}` : ""}</div>
+        <div class="small">${txt(x.items)}</div><div class="small muted">${x.receiver ? `تحویل‌گیرنده: ${esc(x.receiver)}` : ""}${n ? ` · ${fa(n)} فایل` : ""}</div>
+        ${waiting && x.pending_reason ? `<div class="small">علت عدم نصب: ${esc(x.pending_reason)}</div>` : ""}</div><div style="text-align:left"><span class="badge">G01</span>${st[0] ? `<span class="badge ${st[1]}">${st[0]}</span>` : ""}</div></div></div>`; };
+    return `<div class="section-title"><h2>کنترل پروژه و پیشرفت فیزیکی</h2><a href="#/install-matrix" class="small">ماتریس همه‌ی پروژه‌ها</a></div>
+      ${scheduleHtml(p, c)}
+      ${c.units.length ? c.units.map(unitCard).join("") : `<div class="card empty">هنوز دستگاهی برای این پروژه تعریف نشده. مراحل نصب برای هر دستگاه جدا ثبت می‌شود.</div>`}
+      <div class="page-actions"><button class="btn${c.units.length ? " secondary" : ""}" data-act="ip-units" data-id="${p.id}">${c.units.length ? "ویرایش دستگاه‌ها" : "+ تعریف دستگاه‌ها"}</button></div>
+      <div class="section-title"><h2>صورتجلسه‌های تحویل کالا</h2></div>
+      ${c.dlv.length ? c.dlv.map(dlvCard).join("") : `<div class="card empty">صورتجلسه‌ی تحویل کالایی ثبت نشده</div>`}
+      <div class="page-actions"><button class="btn secondary" data-act="ip-dlv" data-id="${p.id}">+ صورتجلسه‌ی تحویل کالا</button></div>`;
+  }
+  async function sheetInstallUnits(projectId) {
+    const units = await api(`install_units?project_id=eq.${projectId}&active=eq.true&select=*&order=label`);
+    let list = units;
+    if (!list.length) {
+      const q = role() === "CEO" ? (await api(`install_quotes?project_id=eq.${projectId}&status=neq.draft&select=spec&order=version.desc&limit=1`))[0] : null;
+      const n = Math.min(Math.max(Number((q && q.spec && q.spec.units) || 1), 1), 8);
+      list = Array.from({ length: n }, (_, i) => ({ label: String.fromCharCode(65 + i), title: "" }));
+    }
+    const row = (u) => `<div class="row" data-un style="margin-top:6px"><input type="text" data-k="label" class="ltr" value="${esc(u.label || "")}" placeholder="A" style="width:64px;flex:none">
+      <input type="text" data-k="title" value="${esc(u.title || "")}" placeholder="توضیح (مثلاً: آسانسور شرقی)" style="flex:1"><button type="button" class="btn secondary small danger-text" data-un-del>حذف</button></div>`;
+    sheet(`<h3>دستگاه‌های پروژه</h3><div class="hint">مراحل نصب برای هر دستگاه جدا ثبت می‌شود (کابین A، B …). حذف یک دستگاه سابقه‌اش را پاک نمی‌کند.</div>
+      <div id="un-list">${list.map(row).join("")}</div>
+      <div class="actions"><button type="button" class="btn secondary small" data-un-add>+ دستگاه دیگر</button></div>
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      const box = el.querySelector("#un-list");
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-un-add]")) { const used = [...box.querySelectorAll('[data-k="label"]')].map((i) => i.value.trim().toUpperCase());
+          let k = 0; while (used.includes(String.fromCharCode(65 + k))) k++; box.insertAdjacentHTML("beforeend", row({ label: String.fromCharCode(65 + k) })); }
+        const d = e.target.closest("[data-un-del]"); if (d && box.querySelectorAll("[data-un]").length > 1) d.closest("[data-un]").remove();
+      });
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const us = [...box.querySelectorAll("[data-un]")].map((r) => ({ label: toEn(r.querySelector('[data-k="label"]').value.trim()), title: r.querySelector('[data-k="title"]').value.trim() }));
+        const labels = us.map((u) => u.label.toUpperCase());
+        if (labels.some((l, i) => labels.indexOf(l) !== i)) throw new Error("نام کوتاه دستگاه‌ها تکراری است");
+        await rpc("save_install_units", { p_project: projectId, p: { units: us } });
+        close(); toast("دستگاه‌ها ذخیره شد"); route();
+      }));
+    });
+  }
+  async function sheetInstallStage(projectId, unitId, code) {
+    const [defs, [u], [s], files, ev] = await Promise.all([api("install_stage_defs?active=eq.true&select=*&order=sort"), api(`install_units?id=eq.${unitId}&select=*`),
+      api(`install_unit_stages?unit_id=eq.${unitId}&stage_code=eq.${code}&select=*`), api(`install_stage_files?unit_id=eq.${unitId}&stage_code=eq.${code}&active=eq.true&select=*&order=id.desc`),
+      api(`install_stage_events?unit_id=eq.${unitId}&stage_code=eq.${code}&select=*&order=id.desc&limit=20`)]);
+    const all = await api(`install_unit_stages?unit_id=eq.${unitId}&select=stage_code,status`);
+    const d = defs.find((x) => x.code === code), cur = s || {};
+    const openBefore = defs.filter((x) => x.sort < d.sort && !all.some((r) => r.stage_code === x.code && r.status === "approved"));
+    sheet(`<h3>${fa(d.code)} · ${esc(d.title)}</h3>
+      <div class="small muted">${esc(unitName(u))} · فرم <bdi dir="ltr">${esc(d.form_code)}</bdi></div>
+      ${openBefore.length ? `<div class="hint" style="color:var(--warn-ink)">مراحل پیش از این هنوز تأیید نشده‌اند: ${openBefore.map((x) => fa(x.code)).join("، ")}</div>` : ""}
+      <label>وضعیت</label><select data-f="status">${Object.entries(ST_STATE).map(([k, v]) => `<option value="${k}"${k === (cur.status || "pending") ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
+      <label>تاریخ بازدید</label>${datePickerHtml("vd", cur.visit_date || toEn(todayTehran()))}
+      <label>بازدیدکننده / ناظر</label><input type="text" data-f="inspector" value="${esc(cur.inspector || "")}">
+      <label>شرح / اشکالات (برای «عدم تأیید» لازم است)</label><textarea data-f="notes" rows="3">${esc(cur.notes || "")}</textarea>
+      <label>عکس یا اسکن فرم امضاشده (اختیاری)</label><input type="file" data-f="file" accept="application/pdf,image/*">
+      ${files.length ? `<div class="small" style="margin-top:6px">${files.map((f) => `<a href="#" data-open="${esc(f.storage_path)}">${esc(f.file_name || "فایل")}</a> <span class="muted">${jdate(f.created_at)}</span>`).join("<br>")}</div>` : ""}
+      <div class="actions"><button class="btn" data-act="save">ثبت</button><button class="btn secondary" data-close>انصراف</button></div>
+      ${ev.length ? `<details class="fold"><summary class="small">سابقه‌ی تغییرات (${fa(ev.length)})</summary>${ev.map((x) => `<div class="small">${jtime(x.created_at)} · ${ST_STATE[x.status] ? ST_STATE[x.status][0] : esc(x.status)}${x.visit_date ? ` · بازدید ${jdate(x.visit_date)}` : ""}${x.notes ? ` · ${esc(x.notes)}` : ""}</div>`).join("")}</details>` : ""}`,
+    (el, close) => {
+      el.addEventListener("click", (e) => { const a = e.target.closest("[data-open]"); if (a) { e.preventDefault(); openFile(a.dataset.open, "install-files"); } });
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const status = el.querySelector('[data-f="status"]').value, notes = el.querySelector('[data-f="notes"]').value.trim();
+        if (status === "rejected" && !notes) throw new Error("شرح اشکال (علت عدم تأیید) را بنویسید");
+        if (status === "approved" && openBefore.length && !confirm(`مراحل ${openBefore.map((x) => fa(x.code)).join("، ")} هنوز تأیید نشده‌اند. با این حال این مرحله تأیید شود؟`)) return;
+        const vd = readDate(el, "vd");
+        if (status !== "pending" && vd > toEn(todayTehran())) throw new Error("تاریخ بازدید نمی‌تواند بعد از امروز باشد");
+        const f = el.querySelector('[data-f="file"]').files[0];
+        const path = f ? await uploadInstallFile(projectId, f) : null;
+        await rpc("set_install_stage", { p_unit: unitId, p_code: code, p: { status, visit_date: status === "pending" ? null : vd, inspector: el.querySelector('[data-f="inspector"]').value.trim(), notes } });
+        if (path) await rpc("add_install_file", { p: { project_id: projectId, unit_id: unitId, stage_code: code, storage_path: path, file_name: f.name, content_type: f.type || null, size_bytes: f.size } });
+        close(); toast("مرحله ثبت شد"); route();
+      }));
+    });
+  }
+  async function sheetInstallDelivery(projectId, did) {
+    const [defs, units, [x], files] = await Promise.all([api("install_stage_defs?active=eq.true&select=*&order=sort"), api(`install_units?project_id=eq.${projectId}&active=eq.true&select=*&order=label`),
+      did ? api(`install_deliveries?id=eq.${did}&select=*`) : [null], did ? api(`install_stage_files?delivery_id=eq.${did}&active=eq.true&select=*`) : []]);
+    const cur = x || {};
+    sheet(`<h3>صورتجلسه‌ی تحویل کالا <bdi dir="ltr" class="small muted">PY-FO-PC-G01</bdi></h3>
+      <label>تاریخ تحویل</label>${datePickerHtml("dd", cur.delivered_on || toEn(todayTehran()))}
+      <label>دستگاه</label><select data-f="unit"><option value="">کل پروژه</option>${units.map((u) => `<option value="${u.id}"${u.id === cur.unit_id ? " selected" : ""}>${esc(unitName(u))}</option>`).join("")}</select>
+      <label>اقلام تحویلی (هر قلم در یک خط)</label><textarea data-f="items" rows="5">${esc(cur.items || "")}</textarea>
+      <label>این کالا در کدام مرحله نصب می‌شود؟</label><select data-f="stage"><option value="">— نامشخص —</option>${defs.map((d) => `<option value="${d.code}"${d.code === cur.stage_code ? " selected" : ""}>${fa(d.code)} · ${esc(d.title)}</option>`).join("")}</select>
+      <label>اگر هنوز نصب نشده، چرا؟</label><input type="text" data-f="reason" value="${esc(cur.pending_reason || "")}" placeholder="مثلاً: چاه آماده نیست، منتظر جوشکاری کارفرما">
+      <label>تحویل‌گیرنده (کارفرما یا نماینده‌اش)</label><input type="text" data-f="receiver" value="${esc(cur.receiver || "")}">
+      <label>توضیح</label><input type="text" data-f="notes" value="${esc(cur.notes || "")}">
+      <label>عکس یا اسکن صورتجلسه‌ی امضاشده (اختیاری)</label><input type="file" data-f="file" accept="application/pdf,image/*">
+      ${files.length ? `<div class="small" style="margin-top:6px">${files.map((f) => `<a href="#" data-open="${esc(f.storage_path)}">${esc(f.file_name || "فایل")}</a>`).join("<br>")}</div>` : ""}
+      <div class="actions"><button class="btn" data-act="save">ثبت</button>${did ? `<button class="btn secondary danger-text" data-act="off">حذف</button>` : ""}<button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      el.addEventListener("click", (e) => { const a = e.target.closest("[data-open]"); if (a) { e.preventDefault(); openFile(a.dataset.open, "install-files"); } });
+      const body = (active) => ({ project_id: projectId, unit_id: el.querySelector('[data-f="unit"]').value ? Number(el.querySelector('[data-f="unit"]').value) : null, delivered_on: readDate(el, "dd"),
+        items: el.querySelector('[data-f="items"]').value.trim(), stage_code: el.querySelector('[data-f="stage"]').value || null, pending_reason: el.querySelector('[data-f="reason"]').value.trim(), receiver: el.querySelector('[data-f="receiver"]').value.trim(), notes: el.querySelector('[data-f="notes"]').value.trim(), active });
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const b = body(true); if (!b.items) throw new Error("اقلام تحویلی را بنویسید");
+        const f = el.querySelector('[data-f="file"]').files[0];
+        const path = f ? await uploadInstallFile(projectId, f) : null;
+        const id = await rpc("save_install_delivery", { p_id: did || null, p: b });
+        if (path) await rpc("add_install_file", { p: { project_id: projectId, unit_id: b.unit_id, delivery_id: id, storage_path: path, file_name: f.name, content_type: f.type || null, size_bytes: f.size } });
+        close(); toast("صورتجلسه ثبت شد"); route();
+      }));
+      const off = el.querySelector('[data-act="off"]');
+      if (off) off.addEventListener("click", (e) => guarded(e.target, async () => { if (!confirm("این صورتجلسه حذف شود؟")) return; await rpc("save_install_delivery", { p_id: did, p: body(false) }); close(); toast("حذف شد"); route(); }));
+    });
+  }
+  // D-105: installation contract (CEO), time-vs-progress chart, delivered-not-installed goods, project costs
+  const COST_CAT = { goods: "خرید کالا", installer: "دستمزد نصاب", labor: "کارگر", transport: "باربری و حمل", side: "هزینه‌های جانبی", other: "سایر" };
+  const addJMonths = (iso, m) => { const [y, mo, d] = iso.split("-").map(Number), j = g2j(y, mo, d); let jm = j.jm + m, jy = j.jy;
+    while (jm > 12) { jm -= 12; jy++; } const g = j2g(jy, jm, Math.min(j.jd, jMonthLen(jy, jm))); return `${g.gy}-${pad(g.gm)}-${pad(g.gd)}`; };
+  const dayDiff = (a, b) => Math.round((new Date(b + "T12:00:00Z") - new Date(a + "T12:00:00Z")) / 86400000);
+  // project progress over time = average of its elevators; each approval date is a step
+  function progressSeries(defs, units, by) {
+    const w = defs.reduce((a, d) => a + Number(d.weight || 1), 0), wt = Object.fromEntries(defs.map((d) => [d.code, Number(d.weight || 1)]));
+    const ev = []; units.forEach((u) => Object.values(by[u.id] || {}).forEach((s) => { if (s.status === "approved" && s.visit_date) ev.push([s.visit_date, wt[s.stage_code] || 0]); }));
+    ev.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    let acc = 0; const pts = [];
+    ev.forEach(([d, x]) => { acc += x; const v = Math.round((acc * 100) / (w * units.length)); if (pts.length && pts[pts.length - 1][0] === d) pts[pts.length - 1][1] = v; else pts.push([d, v]); });
+    return pts;
+  }
+  function scheduleHtml(p, c) {
+    if (!p.start_on || !p.due_on || !c.units.length) return "";
+    const today = toEn(todayTehran()), total = Math.max(dayDiff(p.start_on, p.due_on), 1), el = dayDiff(p.start_on, today);
+    const timePct = Math.max(0, Math.min(100, Math.round((el * 100) / total))), left = dayDiff(today, p.due_on);
+    const pcts = c.units.map((u) => unitPct(c.defs, c.by[u.id])), prog = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+    const gap = prog - timePct, tone = prog >= 100 ? "ok" : gap >= 0 ? "ok" : gap >= -15 ? "warn" : "danger";
+    const end = today > p.due_on ? today : p.due_on, span = Math.max(dayDiff(p.start_on, end), 1);
+    const W = 340, H = 170, L = 34, R = 10, T = 12, B = 26, X = (d) => L + ((W - L - R) * Math.max(0, dayDiff(p.start_on, d))) / span, Y = (v) => T + ((H - T - B) * (100 - v)) / 100;
+    const pts = progressSeries(c.defs, c.units, c.by);
+    let path = `M${X(p.start_on)},${Y(0)}`, last = 0; pts.forEach(([d, v]) => { path += ` H${X(d).toFixed(1)} V${Y(v).toFixed(1)}`; last = v; }); path += ` H${X(today > p.start_on ? today : p.start_on).toFixed(1)}`;
+    const grid = [0, 50, 100].map((v) => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" class="ch-grid"/><text x="${L - 6}" y="${Y(v) + 4}" class="ch-ax" text-anchor="end">${fa(v)}٪</text>`).join("");
+    const svg = `<svg viewBox="0 0 ${W} ${H}" class="ch" role="img" aria-label="پیشرفت ${fa(prog)} درصد در برابر زمان سپری‌شده ${fa(timePct)} درصد">${grid}
+      <line x1="${X(p.start_on)}" y1="${Y(0)}" x2="${X(p.due_on)}" y2="${Y(100)}" class="ch-plan"><title>برنامه: پیشرفت خطی تا تحویل</title></line>
+      <path d="${path}" class="ch-act"/>${pts.map(([d, v]) => `<circle cx="${X(d)}" cy="${Y(v)}" r="4" class="ch-dot"><title>${jdate(d)}: ${fa(v)}٪</title></circle>`).join("")}
+      <line x1="${X(today)}" x2="${X(today)}" y1="${T}" y2="${H - B}" class="ch-today"/><text x="${X(today) + (X(today) > W / 2 ? -4 : 4)}" y="${T + 10}" class="ch-ax" text-anchor="${X(today) > W / 2 ? "end" : "start"}">امروز</text>
+      <text x="${X(p.start_on)}" y="${H - 8}" class="ch-ax" text-anchor="start">${jdate(p.start_on)}</text>${today <= p.due_on || X(p.due_on) < X(today) - 40 ? `<text x="${X(p.due_on)}" y="${H - 8}" class="ch-ax" text-anchor="end">تحویل ${jdate(p.due_on)}</text>` : ""}</svg>`;
+    return `<div class="card"><div class="item-head"><div><div class="item-title">زمان در برابر پیشرفت</div>
+        <div class="small muted">شروع ${jdate(p.start_on)} · تحویل طبق قرارداد ${jdate(p.due_on)}</div></div>
+        <span class="badge ${tone}">${prog >= 100 ? "تکمیل شد" : gap >= 0 ? "جلوتر از برنامه" : `${fa(-gap)}٪ عقب از برنامه`}</span></div>
+      <div class="sched-nums"><div><b>${fa(prog)}٪</b><span>پیشرفت فیزیکی</span></div><div><b>${fa(timePct)}٪</b><span>زمان سپری‌شده (${fa(Math.max(el, 0))} از ${fa(total)} روز)</span></div>
+        <div><b class="${left < 0 ? "debt" : ""}">${left >= 0 ? fa(left) : fa(-left)}</b><span>${left >= 0 ? "روز تا تحویل" : "روز تأخیر"}</span></div></div>
+      ${svg}<div class="ch-legend small"><span><i class="lg-act"></i>پیشرفت واقعی</span><span><i class="lg-plan"></i>برنامه (خطی تا تحویل)</span></div></div>`;
+  }
+  function contractHtml(p, k) {
+    if (role() !== "CEO") return "";
+    if (!k) return `<div class="card"><div class="item-title">قرارداد نصب</div><div class="hint">با ثبت قرارداد، پروژه کد نصب می‌گیرد (اولین کد ۱۶۰) و نمودار زمان در برابر پیشرفت ساخته می‌شود.</div>
+      <div class="actions"><button class="btn" data-act="ip-contract" data-id="${p.id}">+ ثبت قرارداد نصب</button></div></div>`;
+    return `<div class="card"><div class="item-head"><div><div class="item-title">قرارداد نصب${k.contract_no ? ` <bdi dir="ltr">${esc(fa(k.contract_no))}</bdi>` : ""}</div>
+        <div class="small">امضا ${jdate(k.signed_on)} · شروع ${jdate(k.start_on)} · مدت ${k.duration_months ? `${fa(k.duration_months)} ماه` : `${fa(k.duration_days)} روز`} · تحویل ${jdate(k.due_on)}</div>
+        <div class="small">مبلغ قرارداد: <b>${money(k.amount_rial)}</b></div>${k.payment_terms ? `<div class="small muted">${txt(k.payment_terms)}</div>` : ""}</div><span class="badge ok">کد نصب ${fa(p.install_code)}</span></div>
+      <div class="actions"><button class="btn secondary small" data-act="ip-contract" data-id="${p.id}">ویرایش قرارداد</button></div></div>`;
+  }
+  function costsHtml(p, k, costs) {
+    if (role() !== "CEO") return "";
+    const total = costs.reduce((a, x) => a + Number(x.amount_rial), 0), byCat = {};
+    costs.forEach((x) => { byCat[x.category] = (byCat[x.category] || 0) + Number(x.amount_rial); });
+    const profit = k ? Number(k.amount_rial) - total : null;
+    return `<div class="section-title"><h2>هزینه‌ها و قیمت تمام‌شده</h2></div>
+      <div class="card"><table class="list">
+        ${Object.entries(COST_CAT).filter(([c]) => byCat[c]).map(([c, l]) => `<tr><td>${l}</td><td>${money(byCat[c])}</td></tr>`).join("")}
+        <tr><td><b>قیمت تمام‌شده تا امروز</b></td><td><b>${money(total)}</b></td></tr>
+        ${k ? `<tr><td>مبلغ قرارداد</td><td>${money(k.amount_rial)}</td></tr><tr><td><b>سود ناخالص پروژه</b>${k.amount_rial ? `<div class="small muted">${fa(String(Math.round((profit * 1000) / k.amount_rial) / 10).replace(".", "٫"))}٪ مبلغ قرارداد</div>` : ""}</td><td><b class="${profit < 0 ? "debt" : ""}">${money(profit)}</b></td></tr>` : ""}</table>
+        ${k ? "" : `<div class="hint">برای محاسبه‌ی سود، قرارداد نصب را ثبت کنید.</div>`}
+        <div class="hint">این هزینه‌ها فقط در پرونده‌ی پروژه ثبت می‌شوند و در حساب مشترکین سرویس اثری ندارند.</div></div>
+      ${costs.slice(0, 30).map((x) => `<div class="card tap" data-act="ip-cost" data-cid="${x.id}"><div class="item-head"><div><div class="item-title">${esc(x.description)}</div>
+        <div class="small muted">${COST_CAT[x.category] || x.category} · ${jdate(x.spent_on)}${x.payee ? ` · ${esc(x.payee)}` : ""}${x.storage_path ? " · رسید پیوست" : ""}</div></div><div>${money(x.amount_rial)}</div></div></div>`).join("")}
+      <div class="page-actions"><button class="btn" data-act="ip-cost" data-id="${p.id}">+ ثبت هزینه</button></div>`;
+  }
+  async function sheetInstallContract(projectId) {
+    const [[p], [k]] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), api(`install_contracts?project_id=eq.${projectId}&active=eq.true&select=*`)]);
+    const cur = k || {}, today = toEn(todayTehran());
+    sheet(`<h3>قرارداد نصب — ${esc(p.title)}</h3>
+      ${p.install_code ? `<div class="small">کد نصب: <b>${fa(p.install_code)}</b></div>` : `<div class="hint">با ذخیره، این پروژه کد نصب بعدی را می‌گیرد.</div>`}
+      <label>شماره‌ی قرارداد (اختیاری)</label><input type="text" data-f="contract_no" class="ltr" value="${esc(cur.contract_no || "")}">
+      <label>تاریخ امضا</label>${datePickerHtml("sg", cur.signed_on || today)}
+      <label>تاریخ شروع کار</label>${datePickerHtml("st", cur.start_on || cur.signed_on || today)}
+      <label>مدت قرارداد (ماه)</label><input type="text" inputmode="numeric" class="ltr" data-f="months" value="${esc(fa(cur.duration_months || 4))}">
+      <div class="hint" id="ct-due"></div>
+      ${amountFieldHtml("ct", "مبلغ کل قرارداد")}
+      <label>نحوه‌ی پرداخت (متن قرارداد)</label><textarea data-f="payment_terms" rows="4">${esc(cur.payment_terms || "")}</textarea>
+      <label>یادداشت</label><input type="text" data-f="notes" value="${esc(cur.notes || "")}">
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      bindAmount(el, "ct");
+      if (cur.amount_rial) { el.querySelector('[data-unit="ct"] [data-u="rial"]').click(); const i = el.querySelector('[data-amount="ct"]'); i.value = String(cur.amount_rial); i.dispatchEvent(new Event("input")); }
+      const due = () => { const m = Number(toEn(el.querySelector('[data-f="months"]').value).replace(/\D/g, "")); const s = readDate(el, "st");
+        el.querySelector("#ct-due").textContent = m > 0 ? `تاریخ تحویل طبق قرارداد: ${jdate(addJMonths(s, m))}` : "مدت را به ماه وارد کنید"; return m > 0 ? addJMonths(s, m) : null; };
+      el.addEventListener("change", due); el.querySelector('[data-f="months"]').addEventListener("input", due); due();
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const m = Number(toEn(el.querySelector('[data-f="months"]').value).replace(/\D/g, "")), a = readAmount(el, "ct");
+        if (!m) throw new Error("مدت قرارداد را وارد کنید"); if (!a.rial) throw new Error("مبلغ قرارداد را وارد کنید");
+        const r = await rpc("save_install_contract", { p_project: projectId, p: { contract_no: el.querySelector('[data-f="contract_no"]').value.trim(), signed_on: readDate(el, "sg"), start_on: readDate(el, "st"),
+          duration_months: m, due_on: due(), amount_rial: a.rial, payment_terms: el.querySelector('[data-f="payment_terms"]').value.trim(), notes: el.querySelector('[data-f="notes"]').value.trim() } });
+        close(); toast(`قرارداد ثبت شد · کد نصب ${fa(r.install_code)}`); route();
+      }));
+    });
+  }
+  async function sheetInstallCost(projectId, cid) {
+    const [units, [x]] = await Promise.all([api(`install_units?project_id=eq.${projectId}&active=eq.true&select=*&order=label`), cid ? api(`install_costs?id=eq.${cid}&select=*`) : [null]]);
+    const cur = x || {};
+    sheet(`<h3>${cid ? "ویرایش هزینه" : "ثبت هزینه‌ی پروژه"}</h3>
+      <label>نوع هزینه</label><select data-f="category">${Object.entries(COST_CAT).map(([k, v]) => `<option value="${k}"${k === cur.category ? " selected" : ""}>${v}</option>`).join("")}</select>
+      <label>شرح</label><input type="text" data-f="description" value="${esc(cur.description || "")}" placeholder="مثلاً: خرید ریل T9 — ۲۶ شاخه">
+      ${amountFieldHtml("cs", "مبلغ")}
+      <label>تاریخ</label>${datePickerHtml("cd", cur.spent_on || toEn(todayTehran()))}
+      <label>دریافت‌کننده (فروشنده، نصاب، باربر …)</label><input type="text" data-f="payee" value="${esc(cur.payee || "")}">
+      ${units.length > 1 ? `<label>دستگاه</label><select data-f="unit"><option value="">کل پروژه</option>${units.map((u) => `<option value="${u.id}"${u.id === cur.unit_id ? " selected" : ""}>${esc(unitName(u))}</option>`).join("")}</select>` : ""}
+      <label>عکس فاکتور یا رسید (اختیاری)</label><input type="file" data-f="file" accept="application/pdf,image/*">
+      ${cur.storage_path ? `<div class="small"><a href="#" data-open="${esc(cur.storage_path)}">رسید پیوست‌شده</a></div>` : ""}
+      <div class="actions"><button class="btn" data-act="save">ثبت</button>${cid ? `<button class="btn secondary danger-text" data-act="off">حذف</button>` : ""}<button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => {
+      bindAmount(el, "cs");
+      if (cur.amount_rial) { el.querySelector('[data-unit="cs"] [data-u="rial"]').click(); const i = el.querySelector('[data-amount="cs"]'); i.value = String(cur.amount_rial); i.dispatchEvent(new Event("input")); }
+      el.addEventListener("click", (e) => { const a = e.target.closest("[data-open]"); if (a) { e.preventDefault(); openFile(a.dataset.open, "install-files"); } });
+      const body = async (active) => { const u = el.querySelector('[data-f="unit"]'), f = el.querySelector('[data-f="file"]').files[0];
+        return { project_id: projectId, unit_id: u && u.value ? Number(u.value) : null, category: el.querySelector('[data-f="category"]').value, description: el.querySelector('[data-f="description"]').value.trim(),
+          amount_rial: readAmount(el, "cs").rial, spent_on: readDate(el, "cd"), payee: el.querySelector('[data-f="payee"]').value.trim(), storage_path: f ? await uploadInstallFile(projectId, f) : null, active }; };
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        if (!el.querySelector('[data-f="description"]').value.trim()) throw new Error("شرح هزینه را بنویسید");
+        if (!readAmount(el, "cs").rial) throw new Error("مبلغ را وارد کنید");
+        await rpc("save_install_cost", { p_id: cid || null, p: await body(true) }); close(); toast("هزینه ثبت شد"); route();
+      }));
+      const off = el.querySelector('[data-act="off"]');
+      if (off) off.addEventListener("click", (e) => guarded(e.target, async () => { if (!confirm("این هزینه حذف شود؟")) return; await rpc("save_install_cost", { p_id: cid, p: { ...(await body(false)), storage_path: null } }); close(); toast("حذف شد"); route(); }));
+    });
+  }
+  // physical progress matrix: elevators × 15 stages (D-105)
+  async function viewInstallMatrix() {
+    const [defs, units] = await Promise.all([api("install_stage_defs?active=eq.true&select=*&order=sort"), api("install_units?active=eq.true&select=*,install_projects(id,title,stage,city,install_code)&order=project_id.desc,label")]);
+    const live = units.filter((u) => u.install_projects && !["lost", "cancelled"].includes(u.install_projects.stage));
+    const ids = live.map((u) => u.id).join(",");
+    const [stages, dlv] = ids ? await Promise.all([api(`install_unit_stages?unit_id=in.(${ids})&select=unit_id,stage_code,status,visit_date`),
+      api("install_deliveries?active=eq.true&stage_code=not.is.null&select=project_id,unit_id,stage_code,items,delivered_on,pending_reason")]) : [[], []];
+    const by = {}; live.forEach((u) => { by[u.id] = {}; }); stages.forEach((s) => { if (by[s.unit_id]) by[s.unit_id][s.stage_code] = s; });
+    const pcts = live.map((u) => unitPct(defs, by[u.id])), avg = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0;
+    const rej = stages.filter((s) => s.status === "rejected").length, done = pcts.filter((x) => x === 100).length;
+    state.matrix = { defs, live, by };
+    const st = (label, v, cls) => `<div class="stat ${cls}"><div class="label">${label}</div><div class="value">${v}</div></div>`;
+    const rows = live.map((u, i) => { const b = by[u.id], p = u.install_projects;
+      return `<tr class="tap" data-act="go" data-href="#/install/${p.id}"><th scope="row"><div>${p.install_code ? `${fa(p.install_code)} · ` : ""}${esc(p.title)}</div><div class="small muted">دستگاه ${esc(u.label)} · <b class="mx-p">${fa(pcts[i])}٪</b></div></th>
+        ${defs.map((d) => { const s = b[d.code] || {}, t = ST_STATE[s.status || "pending"], g = s.status !== "approved" && dlv.find((x) => x.project_id === p.id && x.stage_code === d.code && (!x.unit_id || x.unit_id === u.id));
+          return `<td><i class="${t[2]}${g ? " mx-dlv" : ""}" title="${esc(d.title)}: ${t[0]}${s.visit_date ? " · " + jdate(s.visit_date) : ""}${g ? ` · کالا تحویل شده، نصب نشده${g.pending_reason ? " (" + esc(g.pending_reason) + ")" : ""}` : ""}"></i></td>`; }).join("")}</tr>`; }).join("");
+    return shell("پیشرفت فیزیکی پروژه‌ها", "more", `<a href="#/install" data-act="back" class="small">→ بازگشت</a>
+      <div class="stats">${st("دستگاه در دست نصب", fa(live.length - done), "tone-info")}${st("میانگین پیشرفت", `${fa(avg)}٪`, "tone-brand")}
+        ${st("مرحله‌ی عدم تأیید", fa(rej), rej ? "danger" : "calm")}${st("تکمیل‌شده", fa(done), "calm")}</div>
+      <div class="page-actions"><button class="btn secondary" data-act="ip-mx-csv">خروجی اکسل</button></div>
+      <div class="mx-legend small">${Object.values(ST_STATE).map((v) => `<span><i class="${v[2]}"></i>${v[0]}</span>`).join("")}<span><i class="mx-no mx-dlv"></i>کالا تحویل شده، نصب نشده</span></div>
+      ${live.length ? `<div class="mx-wrap"><table class="mx"><thead><tr><th scope="col">پروژه / دستگاه</th>${defs.map((d) => `<th scope="col" title="${esc(d.title)}">${fa(Number(d.code))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
+        <details class="fold"><summary class="small">راهنمای شماره‌ی مراحل</summary>${defs.map((d) => `<div class="small">${fa(d.code)} · ${esc(d.title)}</div>`).join("")}</details>`
+        : `<div class="card empty">هنوز برای هیچ پروژه‌ای دستگاه تعریف نشده. در صفحه‌ی هر پروژه «تعریف دستگاه‌ها» را بزنید.</div>`}
+      <div class="hint">هر مرحله وزن برابر دارد؛ درصد پیشرفت = سهم مراحل تأییدشده از ۱۵ مرحله. پروژه‌های لغوشده یا از دست رفته نمایش داده نمی‌شوند.</div>`);
+  }
+  function matrixCsv() {
+    const m = state.matrix; if (!m) return;
+    downloadCsv(`pishraft-nasb-${toEn(todayTehran())}.csv`, ["پروژه", "دستگاه", ...m.defs.map((d) => `${d.code} ${d.title}`), "درصد پیشرفت"],
+      m.live.map((u) => { const b = m.by[u.id]; return [u.install_projects.title, u.label, ...m.defs.map((d) => { const s = b[d.code] || {}; return ST_STATE[s.status || "pending"][0] + (s.visit_date ? ` ${jdate(s.visit_date)}` : ""); }), unitPct(m.defs, b)]; }));
   }
   async function newInstallQuote(projectId) {
     const [[p], d, cts] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), rpc("get_install_defaults"), api(`install_project_contacts?project_id=eq.${projectId}&active=eq.true&select=name&order=sort`)]);
@@ -3250,6 +3566,13 @@
   }
   function installClick(act, el, id) {
     if (act === "ip-new") sheetInstallProject();
+    const pid = Number((location.hash.match(/^#\/install\/(\d+)/) || [])[1]);
+    if (act === "ip-units") sheetInstallUnits(id).catch((er) => toast(er.message));
+    if (act === "ip-st") sheetInstallStage(pid, Number(el.dataset.u), el.dataset.c).catch((er) => toast(er.message));
+    if (act === "ip-dlv") sheetInstallDelivery(pid, el.dataset.did ? Number(el.dataset.did) : null).catch((er) => toast(er.message));
+    if (act === "ip-mx-csv") matrixCsv();
+    if (act === "ip-contract") sheetInstallContract(id).catch((er) => toast(er.message));
+    if (act === "ip-cost") sheetInstallCost(pid, el.dataset.cid ? Number(el.dataset.cid) : null).catch((er) => toast(er.message));
     if (act === "ip-edit") api(`install_projects?id=eq.${id}&select=*`).then(([p]) => sheetInstallProject(p)).catch((er) => toast(er.message));
     if (act === "ip-defaults") sheetInstallDefaults().catch((er) => toast(er.message));
     if (act === "ip-stage") rpc("set_install_project_stage", { p_id: id, p_stage: document.querySelector('[data-f="stage"]').value }).then(() => { toast("مرحله ثبت شد"); route(); }).catch((er) => toast(er.message));
@@ -3455,7 +3778,8 @@
         case "debts": html = can.recordPayment() ? await viewDebts() : await viewDashboard(); break;
         case "docs": html = isStaff() ? await viewDocs() : await viewDashboard(); break;
         case "proforma": html = await viewProforma(Number(arg)); break;
-        case "install": html = role() === "CEO" ? (arg ? await viewInstallProject(Number(arg)) : await viewInstall()) : await viewDashboard(); break;
+        case "install-matrix": html = canInstall() ? await viewInstallMatrix() : await viewDashboard(); break;
+        case "install": html = canInstall() ? (arg ? await viewInstallProject(Number(arg)) : await viewInstall()) : await viewDashboard(); break;
         case "iq": html = role() === "CEO" ? await viewInstallQuote(Number(arg)) : await viewDashboard(); break;
         case "templates": html = role() === "CEO" ? await viewTemplates() : await viewDashboard(); break;
         case "reports": html = role() === "CEO" ? await viewReports() : await viewDashboard(); break;

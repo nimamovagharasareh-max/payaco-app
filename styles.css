@@ -571,7 +571,8 @@ table.mx .mx-p { color: var(--text); }
 .sched-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 6px; text-align: center; }
 .sched-nums b { display: block; font-size: 1.35rem; font-variant-numeric: tabular-nums; }
 .sched-nums span { font-size: .72rem; color: var(--muted); }
-svg.ch { width: 100%; height: auto; display: block; }
+svg.ch { width: 100%; max-width: 460px; height: auto; display: block; margin: 0 auto; direction: ltr; }
+.sched-nums { max-width: 460px; margin-inline: auto; }
 .ch-grid { stroke: var(--line); stroke-width: 1; }
 .ch-ax { fill: var(--muted); font-size: 10px; font-family: inherit; }
 .ch-plan { stroke: var(--muted); stroke-width: 2; stroke-dasharray: 5 4; }
@@ -657,6 +658,14 @@ table.if-pt td.n { width: 22px; }
 table.rp-st td { font-size: calc(8.5pt * var(--fit, 1)); padding: 1px 4px; }
 .rp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 4px; vertical-align: middle; }
 .rp-note { font-size: 8.5pt; margin-top: 4px; line-height: 1.7; }
+
+
+/* ---------- section switches inside installation pages (D-109) */
+.ip-tabs { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 10px 0; padding-bottom: 2px; scrollbar-width: none; }
+.ip-tabs::-webkit-scrollbar { display: none; }
+.ip-tabs button { flex: 1 0 auto; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 12px; padding: 10px 14px; font: inherit; font-size: .9rem; font-weight: 600; white-space: nowrap; min-height: 44px; }
+.ip-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.ip-tabs button span { font-weight: 400; opacity: .8; margin-inline-start: 4px; }
 
 @media print {
   body { background: #fff !important; }

@@ -2988,21 +2988,31 @@
         <div style="text-align:left">${prices.length ? money(Math.min(...prices)) : ""}<span class="badge ${st[1]}">${st[0]}</span>${drafts.has(p.id) ? `<span class="badge warn">پیش‌نویس باز</span>` : ""}</div></div></div>`; };
     const ceo = role() === "CEO";
     const run = ps.filter((p) => p.stage === "won" || p.install_code), pre = ps.filter((p) => !run.includes(p) && ["estimate", "quoted"].includes(p.stage)), closed = ps.filter((p) => !run.includes(p) && !pre.includes(p));
-    const grp = (t, list, empty) => `<div class="ip-grp"><div class="section-title"><h2>${t}</h2><span class="small muted">${fa(list.length)}</span></div>${list.length ? list.map(card).join("") : `<div class="card empty">${empty}</div>`}</div>`;
+    const grp = (t, list, empty) => `<div class="ip-grp">${list.length ? list.map(card).join("") : `<div class="card empty">${empty}</div>`}</div>`;
+    let lt = ""; try { lt = sessionStorage.getItem("ip-ltab") || ""; } catch (e) { /* default */ }
+    if (!["run", "pre", "lost"].includes(lt)) lt = run.length ? "run" : "pre";
     return shell("پروژه‌های نصب", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
       <div class="page-actions">${ceo ? `<button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button>` : ""}<button class="btn secondary" data-act="go" data-href="#/install-matrix">پیشرفت فیزیکی پروژه‌ها</button>${ceo ? `<button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button>` : ""}</div>
       <div class="hint">${ceo ? "پیشنهاد قیمت و مبلغ‌ها فقط برای مدیرعامل است؛ مدیر فنی پروژه‌ها و مراحل نصب را می‌بیند و ثبت می‌کند." : "مراحل نصب هر دستگاه را از صفحه‌ی پروژه ثبت کنید."} هر پروژه پرونده‌ی خودش را دارد: پیشنهاد قیمت، دستگاه‌ها، ۱۵ مرحله‌ی کنترل پروژه و صورتجلسه‌های تحویل کالا.</div>
       <div class="ip-find"><input type="search" id="ip-find" inputmode="search" placeholder="کد نصب (مثلاً ۱۶۰)، نام پروژه یا کارفرما" autocomplete="off"></div>
-      ${ps.length ? `${grp("پروژه‌های جاری (قرارداد بسته شد)", run.sort((x, y) => (x.install_code || 1e9) - (y.install_code || 1e9)), "هنوز قرارداد نصبی ثبت نشده")}
-        ${grp("پیش از قرارداد (برآورد و پیشنهاد)", pre, "پروژه‌ای در مرحله‌ی پیش از قرارداد نیست")}
-        ${closed.length ? `<details class="fold"><summary class="small">از دست رفته یا لغوشده (${fa(closed.length)})</summary>${closed.map(card).join("")}</details>` : ""}`
+      ${ps.length ? `<div class="ip-tabs" role="tablist" data-ltab>${[["run", "پروژه‌های جاری", run], ["pre", "پیش از قرارداد", pre], ["lost", "قرارداد نشده", closed]].map(([x, l, li]) => `<button type="button" role="tab" data-tab="${x}" class="${x === lt ? "on" : ""}">${l} <span>${fa(li.length)}</span></button>`).join("")}</div>
+        <div data-lpane="run"${lt === "run" ? "" : " hidden"}>${grp("", run.sort((x, y) => (x.install_code || 1e9) - (y.install_code || 1e9)), "هنوز قرارداد نصبی ثبت نشده")}</div>
+        <div data-lpane="pre"${lt === "pre" ? "" : " hidden"}>${grp("", pre, "پروژه‌ای در مرحله‌ی پیش از قرارداد نیست")}</div>
+        <div data-lpane="lost"${lt === "lost" ? "" : " hidden"}>${grp("", closed, "پیشنهاد قرارداد نشده‌ای نیست")}<div class="hint">پروژه‌هایی که «از دست رفت» یا «لغو» شده‌اند، با پیشنهادهای قیمتشان اینجا می‌مانند.</div></div>`
         : `<div class="card empty">هنوز پروژه‌ای ثبت نشده</div>`}`);
   }
   function bindInstallFind() {
+    const bar = document.querySelector("[data-ltab]");
+    if (bar) bar.addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (!b) return;
+      bar.querySelectorAll("[data-tab]").forEach((x) => x.classList.toggle("on", x === b));
+      document.querySelectorAll("[data-lpane]").forEach((pn) => { pn.hidden = pn.dataset.lpane !== b.dataset.tab; });
+      try { sessionStorage.setItem("ip-ltab", b.dataset.tab); } catch (er) { /* convenience */ } });
     const i = document.getElementById("ip-find"); if (!i) return;
     const go = () => { const q = toEn(i.value.trim()).toLowerCase(); const cards = [...document.querySelectorAll("[data-s]")];
       cards.forEach((c) => { c.hidden = !!q && !toEn(c.dataset.s).toLowerCase().includes(q); });
-      document.querySelectorAll(".ip-grp").forEach((g) => { g.hidden = !!q && !g.querySelector("[data-s]:not([hidden])"); }); };
+      const on = bar && bar.querySelector(".on");
+      document.querySelectorAll("[data-lpane]").forEach((pn) => { pn.hidden = q ? !pn.querySelector("[data-s]:not([hidden])") : !!on && pn.dataset.lpane !== on.dataset.tab; });
+      if (bar) bar.hidden = !!q; };
     i.addEventListener("input", go);
     i.addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = toEn(i.value.trim()); const hit = [...document.querySelectorAll("[data-s]")].filter((c) => !c.hidden);
       const exact = /^\d+$/.test(q) && hit.find((c) => c.dataset.s.split(" ")[0] === q); const t = exact || (hit.length === 1 && hit[0]); if (t) location.hash = t.dataset.href; });
@@ -3073,21 +3083,35 @@
       return `<div class="card tap" data-act="go" data-href="#/iq/${q.id}"><div class="item-head"><div><div class="item-title">${q.document_number ? `پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number))}</bdi>` : "پیش‌نویس پیشنهاد"} · نسخه ${fa(q.version)}</div>
         <div class="small muted">${q.issued_at ? `صدور ${jtime(q.issued_at)} · اعتبار تا ${jtime(q.valid_until)}` : `آخرین تغییر ${jtime(q.updated_at)}`}</div>
         ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div><span class="badge ${s[1]}">${s[0]}</span></div></div>`; };
-    return shell(p.title, "more", `<a href="#/install" data-act="back" class="small">→ بازگشت</a>
-      <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}${p.install_code ? ` <span class="badge ok">کد نصب ${fa(p.install_code)}</span>` : ""}</div>
+    const won = p.stage === "won" || !!k, closed = ["lost", "cancelled"].includes(p.stage);
+    const headCard = `<div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}${p.install_code ? ` <span class="badge ok">کد نصب ${fa(p.install_code)}</span>` : ""}</div>
         ${(cts.length ? cts : [{ name: p.client_name, mobile: p.client_mobile, role: "کارفرما" }]).map((c) => `<div class="small">${esc(c.name)}${c.role ? ` <span class="muted">(${esc(c.role)})</span>` : ""}${c.mobile ? ` · <a href="tel:${esc(c.mobile)}" class="ltr">${esc(fa(c.mobile))}</a>` : ""}</div>`).join("")}
         <div class="small muted">${esc(p.city || "")}${p.address ? " · " + esc(p.address) : ""}</div>${p.notes ? `<div class="small">${txt(p.notes)}</div>` : ""}</div><span class="badge ${st[1]}">${st[0]}</span></div>
-        ${ceo ? `<label>مرحله‌ی پروژه</label><div class="row"><select data-f="stage" style="flex:1">${Object.entries(IP_STAGE).map(([k, v]) => `<option value="${k}"${k === p.stage ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
-        <button class="btn secondary small" data-act="ip-stage" data-id="${id}">ثبت مرحله</button></div>
-        <div class="actions"><button class="btn secondary small" data-act="ip-edit" data-id="${id}">ویرایش اطلاعات</button></div>` : ""}</div>
-      ${ceo && hist ? historyHtml(hist) : ""}
-      ${contractHtml(p, k)}
-      ${ceo ? `<div class="section-title"><h2>برآورد و پیشنهاد قیمت</h2></div>
-      <div class="page-actions">${draft ? `<button class="btn" data-act="go" data-href="#/iq/${draft.id}">ادامه‌ی پیش‌نویس</button>` : `<button class="btn" data-act="iq-new" data-id="${id}">+ پیشنهاد قیمت جدید</button>`}</div>
-      ${qs.length ? qs.map(qcard).join("") : `<div class="card empty">هنوز برآوردی ثبت نشده</div>`}` : ""}
-      ${controlHtml(p, ctl)}
-      ${receiptsHtml(p, k, rcs)}
-      ${costsHtml(p, k, costs)}`);
+        ${ceo && !won ? `<label>مرحله‌ی پروژه</label><div class="row"><select data-f="stage" style="flex:1">${Object.entries(IP_STAGE).filter(([x]) => x !== "won").map(([x, v]) => `<option value="${x}"${x === p.stage ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
+        <button class="btn secondary small" data-act="ip-stage" data-id="${id}">ثبت مرحله</button></div><div class="hint">«قرارداد بسته شد» با ثبت قرارداد نصب خودکار زده می‌شود.</div>` : ""}
+        ${ceo ? `<div class="actions"><button class="btn secondary small" data-act="ip-edit" data-id="${id}">ویرایش اطلاعات</button>${won ? `<button class="btn small" data-act="ip-report" data-id="${id}">گزارش پروژه (چاپ / PDF)</button>` : ""}</div>`
+          : won ? `<div class="actions"><button class="btn small" data-act="ip-report" data-id="${id}">گزارش پروژه (چاپ / PDF)</button></div>` : ""}</div>`;
+    const quotes = `${!won && !closed ? `<div class="page-actions">${draft ? `<button class="btn" data-act="go" data-href="#/iq/${draft.id}">ادامه‌ی پیش‌نویس</button>` : `<button class="btn" data-act="iq-new" data-id="${id}">+ پیشنهاد قیمت جدید</button>`}</div>` : ""}
+      ${qs.length ? qs.map(qcard).join("") : `<div class="card empty">هنوز برآوردی ثبت نشده</div>`}`;
+    // D-109: a running contract has no new quotations or lead stages; its sections sit under their own switches
+    const tabs = won ? [["prog", "پیشرفت و فرم‌ها", `${controlHtml(p, ctl, "schedule")}${controlHtml(p, ctl)}`], ["dlv", "تحویل کالا", controlHtml(p, ctl, "dlv")],
+        ...(ceo ? [["money", "مالی", `${receiptsHtml(p, k, rcs)}${costsHtml(p, k, costs)}`], ["info", "قرارداد و سوابق", `${contractHtml(p, k)}
+          ${qs.length ? `<details class="fold"><summary class="small">پیشنهادهای قیمت پیش از قرارداد (${fa(qs.length)})</summary>${qs.map(qcard).join("")}</details>` : ""}`]] : [])]
+      : [...(ceo ? [["quote", closed ? "پیشنهادهای قیمت" : "برآورد و پیشنهاد قیمت", `${hist ? historyHtml(hist) : ""}${quotes}`]] : []),
+        ...(ceo && !closed ? [["contract", "ثبت قرارداد", contractHtml(p, k)]] : [])];
+    let cur = ""; try { cur = sessionStorage.getItem("ip-tab-" + id) || ""; } catch (e) { /* default */ }
+    if (!tabs.some((t) => t[0] === cur)) cur = tabs.length ? tabs[0][0] : "";
+    const bar = tabs.length > 1 ? `<div class="ip-tabs" role="tablist" data-ptab="${id}">${tabs.map((t) => `<button type="button" role="tab" data-tab="${t[0]}" class="${t[0] === cur ? "on" : ""}" aria-selected="${t[0] === cur}">${t[1]}</button>`).join("")}</div>` : "";
+    return shell(p.title, "more", `<a href="#/install" data-act="back" class="small">→ بازگشت</a>
+      ${headCard}${bar}${tabs.map((t) => `<div data-pane="${t[0]}"${t[0] === cur ? "" : " hidden"}>${t[2]}</div>`).join("")}
+      ${!won && !ceo ? controlHtml(p, ctl) : ""}`);
+  }
+  function bindProjectTabs() {
+    const bar = document.querySelector("[data-ptab]"); if (!bar) return;
+    bar.addEventListener("click", (e) => { const b = e.target.closest("[data-tab]"); if (!b) return;
+      bar.querySelectorAll("[data-tab]").forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", String(x === b)); });
+      document.querySelectorAll("[data-pane]").forEach((pn) => { pn.hidden = pn.dataset.pane !== b.dataset.tab; });
+      try { sessionStorage.setItem("ip-tab-" + bar.dataset.ptab, b.dataset.tab); } catch (er) { /* per-tab convenience */ } });
   }
   /* ------------------------------------------------------------------ installation project control (D-105)
      the 15-step workflow of PY-LI-PC-00 per elevator, physical progress (equal weights), scans of the signed
@@ -3120,15 +3144,13 @@
   }
   // goods delivered for a stage that this elevator has not passed yet (delivered, not installed)
   const pendingGoods = (dlv, u, b) => dlv.filter((x) => x.stage_code && (!x.unit_id || x.unit_id === u.id) && (b[x.stage_code] || {}).status !== "approved");
-  function controlHtml(p, c) {
+  function controlHtml(p, c, part) {
     const fileCount = (uid, code) => c.files.filter((f) => f.unit_id === uid && f.stage_code === code).length;
     const unitCard = (u) => { const b = c.by[u.id], pct = unitPct(c.defs, b), nx = nextStage(c.defs, b);
       const rej = c.defs.filter((d) => (b[d.code] || {}).status === "rejected").length, pg = pendingGoods(c.dlv, u, b);
-      return `<div class="card"><div class="item-head"><div><div class="item-title">${esc(unitName(u))}</div>
-          <div class="small muted">${nx ? `مرحله‌ی جاری: ${fa(nx.code)} · ${esc(nx.title)}` : "همه‌ی مراحل تأیید شد"}</div></div>
-          <div style="text-align:left"><b>${fa(pct)}٪</b>${rej ? `<span class="badge danger">${fa(rej)} عدم تأیید</span>` : ""}</div></div>
-        <div class="progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><div style="width:${pct}%"></div></div>
-        <div class="mx-strip" aria-hidden="true">${c.defs.map((d) => `<i class="${ST_STATE[(b[d.code] || {}).status || "pending"][2]}${pg.some((x) => x.stage_code === d.code) ? " mx-dlv" : ""}"></i>`).join("")}</div>
+      return `<div class="card"><div class="pr-card unit-ring">${ringSvg(c.defs, b, pct, 104)}
+          <div class="pr-t"><b>${esc(unitName(u))}</b><span class="small muted">${nx ? `مرحله‌ی جاری: ${fa(nx.code)} · ${esc(nx.title)}` : "همه‌ی مراحل تأیید شد"}</span>
+          ${rej ? `<span class="badge danger">${fa(rej)} عدم تأیید</span>` : ""}${pg.length ? `<span class="badge warn">${fa(pg.length)} کالای نصب‌نشده</span>` : ""}</div></div>
         ${pg.length ? `<div class="goods-wait"><div class="small"><b>کالای تحویل‌شده، هنوز نصب‌نشده</b></div>${pg.map((x) => { const d = c.defs.find((y) => y.code === x.stage_code);
           return `<div class="small">${esc(lines(x.items)[0] || "")}${lines(x.items).length > 1 ? ` و ${fa(lines(x.items).length - 1)} قلم دیگر` : ""} · تحویل ${jdate(x.delivered_on)} · مرحله‌ی ${fa(x.stage_code)} (${esc(d ? d.title : "")}) ·
             ${x.pending_reason ? `علت: ${esc(x.pending_reason)}` : `<span class="debt">علت عدم نصب ثبت نشده</span>`}</div>`; }).join("")}</div>` : ""}
@@ -3145,14 +3167,12 @@
       return `<div class="card tap" data-act="ip-dlv" data-did="${x.id}"><div class="item-head"><div><div class="item-title">${jdate(x.delivered_on)}${u ? ` · دستگاه ${esc(u.label)}` : ""}${x.stage_code ? ` · مرحله‌ی ${fa(x.stage_code)}` : ""}</div>
         <div class="small">${txt(x.items)}</div><div class="small muted">${x.receiver ? `تحویل‌گیرنده: ${esc(x.receiver)}` : ""}${n ? ` · ${fa(n)} فایل` : ""}</div>
         ${waiting && x.pending_reason ? `<div class="small">علت عدم نصب: ${esc(x.pending_reason)}</div>` : ""}</div><div style="text-align:left"><span class="badge">G01</span>${st[0] ? `<span class="badge ${st[1]}">${st[0]}</span>` : ""}</div></div></div>`; };
+    if (part === "schedule") return scheduleHtml(p, c);
+    if (part === "dlv") return `${c.dlv.length ? c.dlv.map(dlvCard).join("") : `<div class="card empty">صورتجلسه‌ی تحویل کالایی ثبت نشده</div>`}
+      <div class="page-actions"><button class="btn" data-act="ip-dlv" data-id="${p.id}">+ صورتجلسه‌ی تحویل کالا</button></div>`;
     return `<div class="section-title"><h2>کنترل پروژه و پیشرفت فیزیکی</h2><a href="#/install-matrix" class="small">پیشرفت همه‌ی پروژه‌ها</a></div>
-      <div class="page-actions"><button class="btn" data-act="ip-report" data-id="${p.id}">گزارش پروژه (چاپ / PDF)</button></div>
-      ${scheduleHtml(p, c)}
       ${c.units.length ? c.units.map(unitCard).join("") : `<div class="card empty">هنوز دستگاهی برای این پروژه تعریف نشده. مراحل نصب برای هر دستگاه جدا ثبت می‌شود.</div>`}
-      <div class="page-actions"><button class="btn${c.units.length ? " secondary" : ""}" data-act="ip-units" data-id="${p.id}">${c.units.length ? "ویرایش دستگاه‌ها" : "+ تعریف دستگاه‌ها"}</button></div>
-      <div class="section-title"><h2>صورتجلسه‌های تحویل کالا</h2></div>
-      ${c.dlv.length ? c.dlv.map(dlvCard).join("") : `<div class="card empty">صورتجلسه‌ی تحویل کالایی ثبت نشده</div>`}
-      <div class="page-actions"><button class="btn secondary" data-act="ip-dlv" data-id="${p.id}">+ صورتجلسه‌ی تحویل کالا</button></div>`;
+      <div class="page-actions"><button class="btn${c.units.length ? " secondary" : ""}" data-act="ip-units" data-id="${p.id}">${c.units.length ? "ویرایش دستگاه‌ها" : "+ تعریف دستگاه‌ها"}</button></div>`;
   }
   async function sheetInstallUnits(projectId) {
     const units = await api(`install_units?project_id=eq.${projectId}&active=eq.true&select=*&order=label`);
@@ -4147,6 +4167,7 @@
       if (page === "iq") bindIqForm();
       if (page === "iform") bindInstallForm();
       if (page === "install" && !arg) bindInstallFind();
+      if (page === "install" && arg) bindProjectTabs();
       if (SEARCH_PAGES.includes(page || def)) injectListSearch(page || def);
       if (payOffer && page === "doc" && Number(arg) === payOffer) {
         const inv = payOffer; payOffer = null;

@@ -373,7 +373,33 @@
     });
   }
 
+  // D-104: the CEO's dashboard has two areas — sales & installation, after-sales service — so their workflows don't mix
+  let dashArea = "service";
+  try { dashArea = localStorage.getItem("dash-area") || "service"; } catch (e) { /* per-device convenience */ }
+  const areaSwitch = () => role() === "CEO" ? `<div class="area-switch" role="tablist">
+      <button type="button" role="tab" data-act="dash-area" data-k="sales" class="${dashArea === "sales" ? "on" : ""}" aria-selected="${dashArea === "sales"}"><b>فروش و نصب</b><span>برآورد، پیشنهاد قیمت، پروژه‌های نصب</span></button>
+      <button type="button" role="tab" data-act="dash-area" data-k="service" class="${dashArea === "service" ? "on" : ""}" aria-selected="${dashArea === "service"}"><b>خدمات پس از فروش</b><span>سرویس، خرابی، قراردادها و صورتحساب‌ها</span></button></div>` : "";
+  async function viewSalesDashboard() {
+    const [ps, qs] = await Promise.all([api("install_projects?select=id,title,client_name,city,stage,updated_at&order=updated_at.desc"),
+      api("install_quotes?select=id,project_id,status,valid_until,document_number,options&order=id.desc")]);
+    const now = new Date(), by = (k) => ps.filter((p) => p.stage === k).length;
+    const drafts = qs.filter((q) => q.status === "draft"), valid = qs.filter((q) => q.status === "issued" && new Date(q.valid_until) > now);
+    const st = (label, v, cls, href) => `<div class="stat ${cls} tap" data-act="go" data-href="${href}"><div class="label">${label}</div><div class="value">${num(v)}</div></div>`;
+    const draftSet = new Set(drafts.map((q) => q.project_id));
+    const card = (p) => { const s2 = IP_STAGE[p.stage] || [p.stage, ""];
+      return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div><div class="small muted">${esc(p.client_name)} · ${esc(p.city || "")} · ${jdate(p.updated_at)}</div></div>
+        <div style="text-align:left"><span class="badge ${s2[1]}">${s2[0]}</span>${draftSet.has(p.id) ? `<span class="badge warn">پیش‌نویس باز</span>` : ""}</div></div></div>`; };
+    return shell("داشبورد", "dashboard", `${areaSwitch()}
+      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="go" data-href="#/install">همه‌ی پروژه‌ها</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
+      <div class="stats">${st("در مرحله‌ی برآورد", by("estimate"), by("estimate") ? "warn" : "calm", "#/install")}${st("پیشنهاد داده شده", by("quoted"), "tone-info", "#/install")}
+        ${st("قرارداد بسته شد", by("won"), "tone-brand", "#/install")}${st("پیشنهاد معتبر (منتظر پاسخ)", valid.length, valid.length ? "tone-brand" : "calm", "#/install")}</div>
+      ${drafts.length ? `<div class="hint">${fa(drafts.length)} پیش‌نویس پیشنهاد هنوز صادر نشده است.</div>` : ""}
+      <div class="section-title"><h2>آخرین پروژه‌ها</h2><a href="#/install" class="small">همه</a></div>
+      ${ps.length ? ps.slice(0, 8).map(card).join("") : `<div class="card empty">هنوز پروژه‌ی نصبی ثبت نشده</div>`}
+      <div class="hint">قدم‌های بعدی بخش نصب (قرارداد نصب، فرم‌های کنترل پروژه، پیشرفت فیزیکی) به همین بخش اضافه می‌شوند.</div>`);
+  }
   async function viewDashboard() {
+    if (role() === "CEO" && dashArea === "sales") return viewSalesDashboard();
     const d = await rpc("get_dashboard");
     const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,needs_text,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
     const stats = [];
@@ -447,11 +473,10 @@
     if (can.changeContract()) quick.push(`<button class="btn secondary" data-act="new-contract">+ قرارداد جدید</button>`);
     if (canDocs()) quick.push(`<button class="btn secondary" data-act="new-proforma">+ پیش‌فاکتور</button>`, `<button class="btn secondary" data-act="new-invoice">+ فاکتور</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="go" data-href="#/docs">اسناد</button>`);
-    if (role() === "CEO") quick.push(`<button class="btn secondary" data-act="go" data-href="#/install">پروژه‌های نصب</button>`);
     const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
     const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
-    return shell("داشبورد", "dashboard", `
+    return shell("داشبورد", "dashboard", `${areaSwitch()}
       <div class="hero">${BRAND_LINES}<div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
       <div class="dash${closeNote ? " has-side" : ""}"><div class="dash-main">
       ${isStaff() ? `<div class="row dash-search"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
@@ -2956,44 +2981,85 @@
       <div class="hint">فقط مدیرعامل این بخش را می‌بیند. هر پروژه پرونده‌ی خودش را دارد؛ مرحله‌ی اول برآورد و پیشنهاد قیمت است و مراحل بعدی نصب بعداً به همین پرونده وصل می‌شوند.</div>
       ${ps.length ? ps.map(card).join("") : `<div class="card empty">هنوز پروژه‌ای ثبت نشده</div>`}`);
   }
-  function sheetInstallProject(p) {
+  // client history by mobile (D-104): earlier projects/quotations for the same numbers and how many became contracts
+  function historyHtml(h) {
+    if (!h) return "";
+    const t = h.totals || {};
+    if (!t.projects && !h.service) return `<div class="hint">این شماره‌ها سابقه‌ای در سیستم ندارند (مشتری تازه).</div>`;
+    const rate = t.projects ? Math.round((t.won / t.projects) * 100) : 0;
+    const verdict = !t.projects ? "" : t.won ? `<span class="badge ok">${fa(t.won)} قرارداد از ${fa(t.projects)} پروژه (${fa(rate)}٪)</span>`
+      : t.projects >= 2 ? `<span class="badge danger">${fa(t.projects)} پروژه، هیچ‌کدام قرارداد نشده</span>` : `<span class="badge warn">۱ پروژه‌ی قبلی، بدون قرارداد</span>`;
+    return `<div class="card" style="border-color:var(--warn)"><div class="item-title">سابقه‌ی این مشتری</div>
+      <div class="row" style="margin:4px 0">${verdict}${t.quotes ? `<span class="badge info">${fa(t.quotes)} پیشنهاد قیمت</span>` : ""}${t.lost ? `<span class="badge">${fa(t.lost)} از دست رفته</span>` : ""}${h.service ? `<span class="badge ok">مشترک سرویس فعال (${fa(h.service)} قرارداد)</span>` : ""}</div>
+      ${(h.projects || []).slice(0, 6).map((x) => `<div class="small"><a href="#/install/${x.id}">${esc(x.title)}</a> · ${(IP_STAGE[x.stage] || [x.stage])[0]} · ${fa(x.quotes)} پیشنهاد${x.last_no ? ` · آخرین <bdi dir="ltr">${esc(fa(x.last_no))}</bdi>` : ""}${x.created_at ? ` · ${jdate(x.created_at)}` : ""}</div>`).join("")}</div>`;
+  }
+  const contactRow = (c, i) => `<div class="card" data-ct="${i}" style="background:var(--surface-2)"><div class="row"><input type="text" data-c="name" value="${esc(c.name || "")}" placeholder="${i ? "نام شریک" : "نام کارفرما / شریک اول"}" style="flex:2">
+      <input type="text" data-c="role" value="${esc(c.role || (i ? "شریک" : "کارفرما"))}" placeholder="سمت" style="flex:1"></div>
+      <div class="row" style="margin-top:6px"><input type="text" data-c="mobile" class="ltr" inputmode="tel" value="${esc(fa(c.mobile || ""))}" placeholder="موبایل ۰۹…" style="flex:1">${i ? `<button type="button" class="btn secondary small danger-text" data-ct-del>حذف</button>` : ""}</div></div>`;
+  async function sheetInstallProject(p) {
     p = p || {};
+    const contacts = p.id ? await api(`install_project_contacts?project_id=eq.${p.id}&active=eq.true&select=name,mobile,role&order=sort`) : [];
+    const list = contacts.length ? contacts : [{ name: p.client_name || "", mobile: p.client_mobile || "", role: "کارفرما" }];
     sheet(`<h3>${p.id ? "ویرایش پروژه‌ی نصب" : "پروژه‌ی نصب جدید"}</h3>
       <label>نام پروژه</label><input type="text" data-f="title" value="${esc(p.title || "")}" placeholder="مثلاً: پروژه‌ی خیابان الهام">
-      <label>کارفرما</label><input type="text" data-f="client_name" value="${esc(p.client_name || "")}" placeholder="مثلاً: مهندس درافشان و آصفی">
-      <label>موبایل کارفرما</label><input type="text" data-f="client_mobile" class="ltr" inputmode="tel" value="${esc(fa(p.client_mobile || ""))}">
+      <label>کارفرما و شرکا</label><div class="hint">نفر اول گیرنده‌ی پیش‌فرض نامه و پیامک است. شماره‌ی همه را وارد کنید تا سابقه‌شان دیده شود.</div>
+      <div id="ip-contacts">${list.map(contactRow).join("")}</div>
+      <div class="actions"><button type="button" class="btn secondary small" data-ct-add>+ شریک دیگر</button></div>
+      <div id="ip-history"></div>
       <label>شهر</label><input type="text" data-f="city" value="${esc(p.city || "اهواز")}">
       <label>نشانی پروژه</label><input type="text" data-f="address" value="${esc(p.address || "")}">
       <label>یادداشت داخلی</label><textarea data-f="notes">${esc(p.notes || "")}</textarea>
       <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
-    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
-      const v = {}; el.querySelectorAll("[data-f]").forEach((i) => { v[i.dataset.f] = i.dataset.f === "client_mobile" ? toEn(i.value.trim()) : i.value.trim(); });
-      const id = await rpc("save_install_project", { p_id: p.id || null, p: v });
-      close(); toast("پروژه ذخیره شد"); location.hash = `#/install/${id}`; route();
-    })));
+    (el, close) => {
+      const box = el.querySelector("#ip-contacts");
+      const read = () => [...box.querySelectorAll("[data-ct]")].map((r) => ({ name: r.querySelector('[data-c="name"]').value.trim(), role: r.querySelector('[data-c="role"]').value.trim(), mobile: toEn(r.querySelector('[data-c="mobile"]').value.trim()) }));
+      let ht = null, lastKey = "";
+      const hist = () => { clearTimeout(ht); ht = setTimeout(async () => {
+        const ms = read().map((c) => c.mobile.replace(/\D/g, "")).filter((m) => m.length >= 10), key = ms.join(",");
+        if (key === lastKey) return; lastKey = key;
+        el.querySelector("#ip-history").innerHTML = ms.length ? historyHtml(await rpc("install_client_history", { p_mobiles: ms, p_exclude_project: p.id || null }).catch(() => null)) : "";
+      }, 500); };
+      box.addEventListener("input", hist); hist();
+      el.addEventListener("click", (e) => {
+        if (e.target.closest("[data-ct-add]")) { box.insertAdjacentHTML("beforeend", contactRow({}, box.querySelectorAll("[data-ct]").length)); box.lastElementChild.querySelector('[data-c="name"]').focus(); }
+        const d = e.target.closest("[data-ct-del]"); if (d) { d.closest("[data-ct]").remove(); hist(); }
+      });
+      el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+        const v = {}; el.querySelectorAll("[data-f]").forEach((i) => { v[i.dataset.f] = i.value.trim(); });
+        v.contacts = read().filter((c) => c.name || c.mobile);
+        const id = await rpc("save_install_project", { p_id: p.id || null, p: v });
+        close(); toast("پروژه ذخیره شد"); location.hash = `#/install/${id}`; route();
+      }));
+    });
   }
   async function viewInstallProject(id) {
-    const [[p], qs] = await Promise.all([api(`install_projects?id=eq.${id}&select=*`), api(`install_quotes?project_id=eq.${id}&select=*&order=version.desc`)]);
+    const [[p], qs, cts] = await Promise.all([api(`install_projects?id=eq.${id}&select=*`), api(`install_quotes?project_id=eq.${id}&select=*&order=version.desc`),
+      api(`install_project_contacts?project_id=eq.${id}&active=eq.true&select=name,mobile,role&order=sort`)]);
     if (!p) return shell("پروژه‌ی نصب", "more", `<div class="card empty">پیدا نشد</div>`);
+    const mobs = cts.map((c) => c.mobile).filter(Boolean);
+    const hist = mobs.length ? await rpc("install_client_history", { p_mobiles: mobs, p_exclude_project: id }).catch(() => null) : null;
     const st = IP_STAGE[p.stage] || [p.stage, ""], draft = qs.find((q) => q.status === "draft");
     const qcard = (q) => { const s = IQ_STATE(q);
       return `<div class="card tap" data-act="go" data-href="#/iq/${q.id}"><div class="item-head"><div><div class="item-title">${q.document_number ? `پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number))}</bdi>` : "پیش‌نویس پیشنهاد"} · نسخه ${fa(q.version)}</div>
         <div class="small muted">${q.issued_at ? `صدور ${jtime(q.issued_at)} · اعتبار تا ${jtime(q.valid_until)}` : `آخرین تغییر ${jtime(q.updated_at)}`}</div>
         ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div><span class="badge ${s[1]}">${s[0]}</span></div></div>`; };
     return shell(p.title, "more", `<a href="#/install" data-act="back" class="small">→ بازگشت</a>
-      <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div><div class="small muted">${esc(p.client_name)}${p.client_mobile ? ` · <bdi dir="ltr">${esc(fa(p.client_mobile))}</bdi>` : ""}</div>
+      <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div>
+        ${(cts.length ? cts : [{ name: p.client_name, mobile: p.client_mobile, role: "کارفرما" }]).map((c) => `<div class="small">${esc(c.name)}${c.role ? ` <span class="muted">(${esc(c.role)})</span>` : ""}${c.mobile ? ` · <a href="tel:${esc(c.mobile)}" class="ltr">${esc(fa(c.mobile))}</a>` : ""}</div>`).join("")}
         <div class="small muted">${esc(p.city || "")}${p.address ? " · " + esc(p.address) : ""}</div>${p.notes ? `<div class="small">${txt(p.notes)}</div>` : ""}</div><span class="badge ${st[1]}">${st[0]}</span></div>
         <label>مرحله‌ی پروژه</label><div class="row"><select data-f="stage" style="flex:1">${Object.entries(IP_STAGE).map(([k, v]) => `<option value="${k}"${k === p.stage ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
         <button class="btn secondary small" data-act="ip-stage" data-id="${id}">ثبت مرحله</button></div>
         <div class="actions"><button class="btn secondary small" data-act="ip-edit" data-id="${id}">ویرایش اطلاعات</button></div></div>
+      ${hist ? historyHtml(hist) : ""}
       <div class="section-title"><h2>برآورد و پیشنهاد قیمت</h2></div>
       <div class="page-actions">${draft ? `<button class="btn" data-act="go" data-href="#/iq/${draft.id}">ادامه‌ی پیش‌نویس</button>` : `<button class="btn" data-act="iq-new" data-id="${id}">+ پیشنهاد قیمت جدید</button>`}</div>
       ${qs.length ? qs.map(qcard).join("") : `<div class="card empty">هنوز برآوردی ثبت نشده</div>`}`);
   }
   async function newInstallQuote(projectId) {
-    const [[p], d] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), rpc("get_install_defaults")]);
+    const [[p], d, cts] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), rpc("get_install_defaults"), api(`install_project_contacts?project_id=eq.${projectId}&active=eq.true&select=name&order=sort`)]);
+    const names = cts.length ? cts.map((c) => c.name) : [p.client_name];
     const spec = { drive: "کششی", room: "موتورخانه‌دار", doors: 1, usage: "مسافربر", susp: "2:1", units: 1 };
-    const id = await rpc("save_install_quote", { p_id: null, p: { project_id: projectId, recipient: `حضور محترم ${p.client_name}`, spec, intro: null,
+    const id = await rpc("save_install_quote", { p_id: null, p: { project_id: projectId, recipient: `حضور محترم ${names.length > 1 ? names.slice(0, -1).join("، ") + " و " + names[names.length - 1] : names[0]}`, spec, intro: null,
       tech_items: d.tech_items || [], price_intro: d.price_intro || "", options: [], notes_items: [], conditions: d.conditions || [], vat_exempt: false, valid_hours: 24 } });
     location.hash = `#/iq/${id}`;
   }
@@ -3166,15 +3232,20 @@
     })));
   }
   async function sendInstallQuoteSms(id) {
-    const pre = await callFunction("notify-customers", { kind: "install_quote", quote_id: id, dry_run: true });
+    const [pre, [q]] = await Promise.all([callFunction("notify-customers", { kind: "install_quote", quote_id: id, dry_run: true }), api(`install_quotes?id=eq.${id}&select=project_id`)]);
+    const cts = (await api(`install_project_contacts?project_id=eq.${q.project_id}&active=eq.true&select=name,mobile,role&order=sort`)).filter((c) => c.mobile);
     sheet(`<h3>ارسال پیشنهاد قیمت با پیامک</h3>
-      ${pre.test ? `<div class="hint">حالت آزمایشی: پیامک به شماره‌ی آزمایشی <bdi dir="ltr">${esc(fa(pre.to || ""))}</bdi> می‌رود.</div>` : ""}
-      <label>شماره‌ی کارفرما</label><input type="text" data-field="mobile" class="ltr" inputmode="tel" value="${esc(fa(pre.intended || ""))}">
+      ${pre.test ? `<div class="hint">حالت آزمایشی: همه‌ی پیامک‌ها به شماره‌ی آزمایشی <bdi dir="ltr">${esc(fa(pre.to || ""))}</bdi> می‌روند.</div>` : ""}
+      ${cts.length ? `<label>گیرندگان</label>${cts.map((c, i) => `<label class="check"><input type="checkbox" data-m="${esc(c.mobile)}" checked> ${esc(c.name)}${c.role ? ` (${esc(c.role)})` : ""} · <bdi dir="ltr">${esc(fa(c.mobile))}</bdi></label>`).join("")}` : ""}
+      <label>شماره‌ی دیگر (اختیاری)</label><input type="text" data-field="mobile" class="ltr" inputmode="tel" value="${cts.length ? "" : esc(fa(pre.intended || ""))}">
       <div class="card small" style="white-space:pre-line">${esc(pre.text)}</div>
       <div class="actions"><button class="btn" data-act="save">ارسال</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
-      const r = await callFunction("notify-customers", { kind: "install_quote", quote_id: id, mobile: toEn(el.querySelector('[data-field="mobile"]').value.trim()) || null });
-      close(); toast(`پیامک به ${fa(r.to)} فرستاده شد${r.test ? " (آزمایشی)" : ""}`);
+      const to = [...el.querySelectorAll("[data-m]:checked")].map((x) => x.dataset.m), extra = toEn(el.querySelector('[data-field="mobile"]').value.trim());
+      if (extra) to.push(extra);
+      if (!to.length) throw new Error("گیرنده‌ای انتخاب نشده است");
+      const ok = []; for (const m of [...new Set(to)]) { const r = await callFunction("notify-customers", { kind: "install_quote", quote_id: id, mobile: m }); ok.push(r); }
+      close(); toast(`${fa(ok.length)} پیامک فرستاده شد${ok[0] && ok[0].test ? " (آزمایشی)" : ""}`);
     })));
   }
   function installClick(act, el, id) {
@@ -3451,6 +3522,7 @@
     if (act === "pf-cancel") { const note = prompt("دلیل لغو پیش‌فاکتور:"); if (note !== null) rpc("cancel_proforma", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "pf-sms") sendProformaSms(id).catch((er) => toast(er.message));
     if (act.startsWith("ip-") || act.startsWith("iq-")) installClick(act, el, id);
+    if (act === "dash-area") { dashArea = el.dataset.k; try { localStorage.setItem("dash-area", dashArea); } catch (er) { /* per-device convenience */ } route(); }
     if (act === "pf-share") {
       const url = `${location.origin}${location.pathname}?p=${el.dataset.code}`, text = `پیش‌فاکتور پایاکو شماره ${fa(el.dataset.no)} — برای مشاهده و تأیید:`;
       if (navigator.share) navigator.share({ title: text, text, url }).catch(() => {}); else copyText(url);

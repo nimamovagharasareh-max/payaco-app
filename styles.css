@@ -291,6 +291,16 @@ body.busy::before { content: ""; position: fixed; top: 0; right: 0; left: 0; hei
 .reminders > .card .item-title { font-size: 14.5px; }
 .dash-side .section-title { margin-top: 14px; }
 
+/* ---------- CEO dashboard areas (D-104): two big switches ---------- */
+.area-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 14px; }
+.area-switch button { border: 0; font: inherit; cursor: pointer; text-align: start; padding: 14px 16px; border-radius: 14px; display: flex; flex-direction: column; gap: 4px; min-height: 76px;
+  color: var(--text); background: linear-gradient(180deg, #ffffff 0%, var(--surface-2) 100%); box-shadow: 0 2px 0 rgba(15, 23, 42, .08), 0 3px 8px rgba(15, 23, 42, .08), inset 0 1px 0 #fff; }
+.area-switch button b { font-size: 16px; font-weight: 900; } .area-switch button span { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.area-switch button.on { color: #fff; background: linear-gradient(180deg, #2f9142 0%, #1f6a2c 100%); box-shadow: 0 2px 0 rgba(20, 70, 30, .35), 0 4px 10px rgba(15, 23, 42, .12), inset 0 1px 0 rgba(255, 255, 255, .22); }
+.area-switch button.on span { color: rgba(255, 255, 255, .85); }
+@media (prefers-color-scheme: dark) { .area-switch button:not(.on) { background: linear-gradient(180deg, #22332e 0%, var(--surface-2) 100%); box-shadow: 0 2px 0 rgba(0, 0, 0, .4), inset 0 1px 0 rgba(255, 255, 255, .06); } }
+@media (prefers-reduced-motion: no-preference) { .area-switch button { transition: transform .12s ease; } .area-switch button:active { transform: translateY(1px); } }
+
 /* ---------- contract page: grouped "more actions" sheet ---------- */
 .menu-group { font-size: 13px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
 .menu-sep { height: 1px; background: var(--line); margin: 16px 0 10px; }

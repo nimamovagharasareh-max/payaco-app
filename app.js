@@ -399,7 +399,7 @@
       return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div><div class="small muted">${esc(p.client_name)} · ${esc(p.city || "")} · ${jdate(p.updated_at)}</div></div>
         <div style="text-align:left"><span class="badge ${s2[1]}">${s2[0]}</span>${draftSet.has(p.id) ? `<span class="badge warn">پیش‌نویس باز</span>` : ""}</div></div></div>`; };
     return shell("داشبورد", "dashboard", `${areaSwitch()}
-      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="go" data-href="#/install">همه‌ی پروژه‌ها</button><button class="btn secondary" data-act="go" data-href="#/install-matrix">ماتریس پیشرفت فیزیکی</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
+      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="go" data-href="#/install">همه‌ی پروژه‌ها</button><button class="btn secondary" data-act="go" data-href="#/install-matrix">پیشرفت فیزیکی پروژه‌ها</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
       <div class="stats">${st("در مرحله‌ی برآورد", by("estimate"), by("estimate") ? "warn" : "calm", "#/install")}${st("پیشنهاد داده شده", by("quoted"), "tone-info", "#/install")}
         ${st("قرارداد بسته شد", by("won"), "tone-brand", "#/install")}${st("پیشنهاد معتبر (منتظر پاسخ)", valid.length, valid.length ? "tone-brand" : "calm", "#/install")}</div>
       ${drafts.length ? `<div class="hint">${fa(drafts.length)} پیش‌نویس پیشنهاد هنوز صادر نشده است.</div>` : ""}
@@ -2990,7 +2990,7 @@
     const run = ps.filter((p) => p.stage === "won" || p.install_code), pre = ps.filter((p) => !run.includes(p) && ["estimate", "quoted"].includes(p.stage)), closed = ps.filter((p) => !run.includes(p) && !pre.includes(p));
     const grp = (t, list, empty) => `<div class="ip-grp"><div class="section-title"><h2>${t}</h2><span class="small muted">${fa(list.length)}</span></div>${list.length ? list.map(card).join("") : `<div class="card empty">${empty}</div>`}</div>`;
     return shell("پروژه‌های نصب", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
-      <div class="page-actions">${ceo ? `<button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button>` : ""}<button class="btn secondary" data-act="go" data-href="#/install-matrix">ماتریس پیشرفت فیزیکی</button>${ceo ? `<button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button>` : ""}</div>
+      <div class="page-actions">${ceo ? `<button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button>` : ""}<button class="btn secondary" data-act="go" data-href="#/install-matrix">پیشرفت فیزیکی پروژه‌ها</button>${ceo ? `<button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button>` : ""}</div>
       <div class="hint">${ceo ? "پیشنهاد قیمت و مبلغ‌ها فقط برای مدیرعامل است؛ مدیر فنی پروژه‌ها و مراحل نصب را می‌بیند و ثبت می‌کند." : "مراحل نصب هر دستگاه را از صفحه‌ی پروژه ثبت کنید."} هر پروژه پرونده‌ی خودش را دارد: پیشنهاد قیمت، دستگاه‌ها، ۱۵ مرحله‌ی کنترل پروژه و صورتجلسه‌های تحویل کالا.</div>
       <div class="ip-find"><input type="search" id="ip-find" inputmode="search" placeholder="کد نصب (مثلاً ۱۶۰)، نام پروژه یا کارفرما" autocomplete="off"></div>
       ${ps.length ? `${grp("پروژه‌های جاری (قرارداد بسته شد)", run.sort((x, y) => (x.install_code || 1e9) - (y.install_code || 1e9)), "هنوز قرارداد نصبی ثبت نشده")}
@@ -3145,7 +3145,8 @@
       return `<div class="card tap" data-act="ip-dlv" data-did="${x.id}"><div class="item-head"><div><div class="item-title">${jdate(x.delivered_on)}${u ? ` · دستگاه ${esc(u.label)}` : ""}${x.stage_code ? ` · مرحله‌ی ${fa(x.stage_code)}` : ""}</div>
         <div class="small">${txt(x.items)}</div><div class="small muted">${x.receiver ? `تحویل‌گیرنده: ${esc(x.receiver)}` : ""}${n ? ` · ${fa(n)} فایل` : ""}</div>
         ${waiting && x.pending_reason ? `<div class="small">علت عدم نصب: ${esc(x.pending_reason)}</div>` : ""}</div><div style="text-align:left"><span class="badge">G01</span>${st[0] ? `<span class="badge ${st[1]}">${st[0]}</span>` : ""}</div></div></div>`; };
-    return `<div class="section-title"><h2>کنترل پروژه و پیشرفت فیزیکی</h2><a href="#/install-matrix" class="small">ماتریس همه‌ی پروژه‌ها</a></div>
+    return `<div class="section-title"><h2>کنترل پروژه و پیشرفت فیزیکی</h2><a href="#/install-matrix" class="small">پیشرفت همه‌ی پروژه‌ها</a></div>
+      <div class="page-actions"><button class="btn" data-act="ip-report" data-id="${p.id}">گزارش پروژه (چاپ / PDF)</button></div>
       ${scheduleHtml(p, c)}
       ${c.units.length ? c.units.map(unitCard).join("") : `<div class="card empty">هنوز دستگاهی برای این پروژه تعریف نشده. مراحل نصب برای هر دستگاه جدا ثبت می‌شود.</div>`}
       <div class="page-actions"><button class="btn${c.units.length ? " secondary" : ""}" data-act="ip-units" data-id="${p.id}">${c.units.length ? "ویرایش دستگاه‌ها" : "+ تعریف دستگاه‌ها"}</button></div>
@@ -3620,9 +3621,63 @@
     openPrint(`فرم ${fa(code)} · ${def.title}`, (host) => paginate(host, { no: fa(f.serial_no || "—"), date: f.visit_date ? jdate(f.visit_date) : jdate(todayTehran()), form: `PY-FO-PC-${code}`, rev: 0, issued: "۱۴۰۵/۰۷/۲۸" },
       company || {}, head, blocks, { draft: f.status !== "final" }));
   }
+  // D-108: graphic progress — a ring of the 15 stages (colour = status) with the percentage in the middle
+  const RING_HEX = { pending: "#d9e1dc", in_progress: "#1d4ed8", approved: "#047857", rejected: "#b91c1c" };
+  function ringSvg(defs, by, pct, size = 112, hex = false) {
+    const r = 42, C = 2 * Math.PI * r, n = defs.length || 15, seg = C / n, gap = Math.min(3, seg * 0.25);
+    const arcs = defs.map((d, i) => { const st = (by[d.code] || {}).status || "pending";
+      return `<circle cx="50" cy="50" r="${r}" fill="none" stroke-width="11" ${hex ? `stroke="${RING_HEX[st]}"` : `class="rg-${st}"`} stroke-dasharray="${(seg - gap).toFixed(2)} ${(C - seg + gap).toFixed(2)}"
+        stroke-dashoffset="${(-(i * seg)).toFixed(2)}" transform="rotate(-90 50 50)"><title>${fa(d.code)} · ${esc(d.title)}: ${ST_STATE[st][0]}</title></circle>`; }).join("");
+    return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" class="ring" role="img" aria-label="پیشرفت ${fa(pct)} درصد">${arcs}
+      <text x="50" y="49" text-anchor="middle" class="ring-v"${hex ? ' fill="#0f172a"' : ""}>${fa(pct)}٪</text><text x="50" y="63" text-anchor="middle" class="ring-l"${hex ? ' fill="#4b5a6b"' : ""}>پیشرفت</text></svg>`;
+  }
+  const timeInfo = (p, prog) => { if (!p.start_on || !p.due_on) return null; const today = toEn(todayTehran()), total = Math.max(dayDiff(p.start_on, p.due_on), 1), el = Math.max(dayDiff(p.start_on, today), 0);
+    const tp = Math.min(100, Math.round((el * 100) / total)), left = dayDiff(today, p.due_on), gap = prog - tp;
+    return { tp, left, total, el, gap, txt: prog >= 100 ? "تکمیل شد" : gap >= 0 ? "طبق برنامه یا جلوتر" : `${fa(-gap)}٪ عقب از برنامه`, tone: prog >= 100 || gap >= 0 ? "ok" : gap >= -15 ? "warn" : "danger" }; };
+  async function sheetInstallReport(projectId) {
+    if (role() !== "CEO") return printInstallReport(projectId, false);
+    sheet(`<h3>گزارش وضعیت پروژه</h3><div class="hint">گزارش آماده‌ی چاپ یا PDF روی سربرگ.</div>
+      <div class="actions"><button class="btn" data-r="client">برای کارفرما (بدون اطلاعات مالی داخلی)</button></div>
+      <div class="actions"><button class="btn secondary" data-r="internal">داخلی (با دریافتی‌ها، هزینه‌ها و سود)</button></div>
+      <div class="actions"><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.addEventListener("click", (e) => { const b = e.target.closest("[data-r]"); if (!b) return; close(); printInstallReport(projectId, b.dataset.r === "internal").catch((er) => toast(er.message)); }));
+  }
+  async function printInstallReport(projectId, internal) {
+    const ceo = role() === "CEO";
+    const [[p], c, cts, ks, rcs, costs, company] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), loadControl(projectId),
+      api(`install_project_contacts?project_id=eq.${projectId}&active=eq.true&select=name,mobile,role&order=sort`),
+      ceo ? api(`install_contracts?project_id=eq.${projectId}&active=eq.true&select=*`) : [], internal ? api(`install_receipts?project_id=eq.${projectId}&active=eq.true&select=*&order=received_on`) : [],
+      internal ? api(`install_costs?project_id=eq.${projectId}&active=eq.true&select=*`) : [], rpc("get_company_profile")]);
+    const k = ks[0] || null, pcts = c.units.map((u) => unitPct(c.defs, c.by[u.id])), prog = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0, ti = timeInfo(p, prog);
+    const kv = (l, v) => `<div class="rp-kv"><span>${l}</span><b>${v}</b></div>`;
+    const head = `<div class="rp-h"><div><h1>گزارش وضعیت پروژه${p.install_code ? ` · کد نصب ${fa(p.install_code)}` : ""}</h1>
+        <div class="small">${esc(p.title)} · ${esc((cts[0] || {}).name || p.client_name || "")}${cts.length > 1 ? ` و ${fa(cts.length - 1)} شریک` : ""} · ${esc(fa(p.address || p.city || ""))}</div>
+        <div class="small">تاریخ گزارش: ${jdate(todayTehran())}${internal ? " · نسخه‌ی داخلی" : ""}</div></div></div>
+      <div class="rp-sum">${ringSvg(c.defs, Object.fromEntries(c.defs.map((d) => { const ss = c.units.map((u) => (c.by[u.id][d.code] || {}).status || "pending");
+        return [d.code, { status: ss.length && ss.every((x) => x === "approved") ? "approved" : ss.includes("rejected") ? "rejected" : ss.some((x) => x !== "pending") ? "in_progress" : "pending" }]; })), prog, 120, true)}
+        <div class="rp-grid">${kv("پیشرفت فیزیکی", `${fa(prog)}٪`)}${ti ? kv("زمان سپری‌شده", `${fa(ti.tp)}٪ (${fa(ti.el)} از ${fa(ti.total)} روز)`) + kv(ti.left >= 0 ? "روز تا تحویل" : "روز تأخیر", fa(Math.abs(ti.left))) + kv("وضعیت نسبت به برنامه", ti.txt) : ""}
+          ${p.start_on ? kv("شروع", jdate(p.start_on)) : ""}${p.due_on ? kv("تحویل طبق قرارداد", jdate(p.due_on)) : ""}${kv("تعداد دستگاه", fa(c.units.length))}</div></div>`;
+    const blocks = [];
+    c.units.forEach((u, i) => { const b = c.by[u.id], pg = pendingGoods(c.dlv, u, b), rej = c.defs.filter((d) => (b[d.code] || {}).status === "rejected");
+      blocks.push({ html: `<div class="rp-unit"><div class="rp-uh">${ringSvg(c.defs, b, pcts[i], 84, true)}<div><h3>${esc(unitName(u))}</h3><div class="small">${(() => { const nx = nextStage(c.defs, b); return nx ? `مرحله‌ی جاری: ${fa(nx.code)} · ${esc(nx.title)}` : "همه‌ی مراحل تأیید شد"; })()}</div></div></div>
+        <table class="if-pt rp-st">${c.defs.map((d) => { const s = b[d.code] || {}, st = s.status || "pending";
+          return `<tr><td class="n">${fa(d.code)}</td><td style="text-align:right">${esc(d.title)}</td><td><i class="rp-dot" style="background:${RING_HEX[st]}"></i>${ST_STATE[st][0]}</td><td>${s.visit_date ? jdate(s.visit_date) : ""}</td></tr>`; }).join("")}</table>
+        ${rej.length ? `<div class="rp-note"><b>اشکالات باز:</b> ${rej.map((d) => `${fa(d.code)} — ${esc((b[d.code] || {}).notes || "")}`).join("؛ ")}</div>` : ""}
+        ${pg.length ? `<div class="rp-note"><b>کالای تحویل‌شده، هنوز نصب‌نشده:</b> ${pg.map((x) => `${esc(lines(x.items)[0] || "")} (تحویل ${jdate(x.delivered_on)}، مرحله‌ی ${fa(x.stage_code)}${x.pending_reason ? `، علت: ${esc(x.pending_reason)}` : ""})`).join("؛ ")}</div>` : ""}</div>`, fit: true }); });
+    if (c.dlv.length) blocks.push(`<div class="if-ps"><h3><span>G</span>صورتجلسه‌های تحویل کالا</h3><table class="if-pt">${c.dlv.map((x) => `<tr><td>${jdate(x.delivered_on)}</td><td style="text-align:right">${esc(lines(x.items).join("، "))}</td><td>${x.receiver ? esc(x.receiver) : ""}</td></tr>`).join("")}</table></div>`);
+    if (internal && ceo) {
+      const got = rcs.filter((r) => r.status === "received" || r.status === "cleared").reduce((a, r) => a + Number(r.amount_rial), 0), pend = rcs.filter((r) => r.status === "pending").reduce((a, r) => a + Number(r.amount_rial), 0);
+      const cost = costs.reduce((a, x) => a + Number(x.amount_rial), 0), byCat = {}; costs.forEach((x) => { byCat[x.category] = (byCat[x.category] || 0) + Number(x.amount_rial); });
+      blocks.push(`<div class="if-ps"><h3><span>₪</span>وضعیت مالی (داخلی)</h3><div class="rp-grid">${k ? kv("مبلغ قرارداد", money(k.amount_rial)) : ""}${kv("وصول‌شده", money(got))}${pend ? kv("چک‌های در جریان", money(pend)) : ""}
+        ${k ? kv("مانده‌ی طلب", money(Number(k.amount_rial) - got)) : ""}${kv("قیمت تمام‌شده تا امروز", money(cost))}${k ? kv("سود ناخالص", money(Number(k.amount_rial) - cost)) : ""}</div>
+        ${cost ? `<table class="if-pt">${Object.entries(COST_CAT).filter(([x]) => byCat[x]).map(([x, l]) => `<tr><td style="text-align:right">${l}</td><td>${money(byCat[x])}</td></tr>`).join("")}</table>` : ""}
+        ${rcs.some((r) => r.method === "cheque") ? `<table class="if-pt"><tr><th>چک</th><th>مبلغ</th><th>سررسید</th><th>وضعیت</th></tr>${rcs.filter((r) => r.method === "cheque").map((r) => `<tr><td class="ltr">${esc(fa(r.cheque_no || ""))}</td><td>${money(r.amount_rial)}</td><td>${jdate(r.cheque_due)}</td><td>${chequeDue(r) ? "سررسید شده، وصول ثبت نشده" : (RC_STATUS[r.status] || [r.status])[0]}${r.cleared_on ? ` (${jdate(r.cleared_on)})` : ""}</td></tr>`).join("")}</table>` : ""}</div>`);
+    }
+    openPrint(`گزارش پروژه ${p.install_code ? fa(p.install_code) : esc(p.title)}`, (host) => paginate(host, { no: p.install_code ? `نصب ${fa(p.install_code)}` : "—", date: jdate(todayTehran()) }, company || {}, head, blocks, {}));
+  }
   // physical progress matrix: elevators × 15 stages (D-105)
   async function viewInstallMatrix() {
-    const [defs, units] = await Promise.all([api("install_stage_defs?active=eq.true&select=*&order=sort"), api("install_units?active=eq.true&select=*,install_projects(id,title,stage,city,install_code)&order=project_id.desc,label")]);
+    const [defs, units] = await Promise.all([api("install_stage_defs?active=eq.true&select=*&order=sort"), api("install_units?active=eq.true&select=*,install_projects(id,title,stage,city,install_code,start_on,due_on)&order=project_id.desc,label")]);
     const live = units.filter((u) => u.install_projects && !["lost", "cancelled"].includes(u.install_projects.stage));
     const ids = live.map((u) => u.id).join(",");
     const [stages, dlv] = ids ? await Promise.all([api(`install_unit_stages?unit_id=in.(${ids})&select=unit_id,stage_code,status,visit_date`),
@@ -3640,10 +3695,17 @@
       <div class="stats">${st("دستگاه در دست نصب", fa(live.length - done), "tone-info")}${st("میانگین پیشرفت", `${fa(avg)}٪`, "tone-brand")}
         ${st("مرحله‌ی عدم تأیید", fa(rej), rej ? "danger" : "calm")}${st("تکمیل‌شده", fa(done), "calm")}</div>
       <div class="page-actions"><button class="btn secondary" data-act="ip-mx-csv">خروجی اکسل</button></div>
+      ${live.length ? `<div class="pr-grid">${live.map((u, i) => { const pp = u.install_projects, nx = nextStage(defs, by[u.id]), ti = timeInfo(pp, pcts[i]);
+        return `<div class="card tap pr-card" data-act="go" data-href="#/install/${pp.id}">${ringSvg(defs, by[u.id], pcts[i], 104)}
+          <div class="pr-t"><b>${pp.install_code ? `کد ${fa(pp.install_code)} · ` : ""}${esc(pp.title)}</b><span>دستگاه ${esc(u.label)}</span>
+          <span class="small muted">${nx ? `${fa(nx.code)} · ${esc(nx.title)}` : "همه‌ی مراحل تأیید شد"}</span>
+          ${ti ? `<span class="badge ${ti.tone}">${ti.left >= 0 ? `${fa(ti.left)} روز تا تحویل` : `${fa(-ti.left)} روز تأخیر`} · ${ti.txt}</span>` : ""}</div></div>`; }).join("")}</div>` : ""}
+      <details class="fold"><summary class="small">نمای جدولی (ماتریس)</summary>
       <div class="mx-legend small">${Object.values(ST_STATE).map((v) => `<span><i class="${v[2]}"></i>${v[0]}</span>`).join("")}<span><i class="mx-no mx-dlv"></i>کالا تحویل شده، نصب نشده</span></div>
       ${live.length ? `<div class="mx-wrap"><table class="mx"><thead><tr><th scope="col">پروژه / دستگاه</th>${defs.map((d) => `<th scope="col" title="${esc(d.title)}">${fa(Number(d.code))}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></div>
         <details class="fold"><summary class="small">راهنمای شماره‌ی مراحل</summary>${defs.map((d) => `<div class="small">${fa(d.code)} · ${esc(d.title)}</div>`).join("")}</details>`
-        : `<div class="card empty">هنوز برای هیچ پروژه‌ای دستگاه تعریف نشده. در صفحه‌ی هر پروژه «تعریف دستگاه‌ها» را بزنید.</div>`}
+        : `<div class="card empty">هنوز برای هیچ پروژه‌ای دستگاه تعریف نشده. در صفحه‌ی هر پروژه «تعریف دستگاه‌ها» را بزنید.</div>`}</details>
+      <div class="mx-legend small">${Object.values(ST_STATE).map((v) => `<span><i class="${v[2]}"></i>${v[0]}</span>`).join("")}</div>
       <div class="hint">هر مرحله وزن برابر دارد؛ درصد پیشرفت = سهم مراحل تأییدشده از ۱۵ مرحله. پروژه‌های لغوشده یا از دست رفته نمایش داده نمی‌شوند.</div>`);
   }
   function matrixCsv() {
@@ -3856,6 +3918,7 @@
     if (act === "if-new") { if (confirm("نسخه‌ی جدید این فرم (بازدید مجدد) ساخته شود؟")) rpc("save_install_form", { p_unit: Number(el.dataset.u), p_code: el.dataset.c, p: { visit_date: toEn(todayTehran()), data: {} } }).then(() => route()).catch((er) => toast(er.message)); }
     if (act === "ip-dlv") sheetInstallDelivery(pid, el.dataset.did ? Number(el.dataset.did) : null).catch((er) => toast(er.message));
     if (act === "ip-mx-csv") matrixCsv();
+    if (act === "ip-report") sheetInstallReport(id).catch((er) => toast(er.message));
     if (act === "ip-contract") sheetInstallContract(id).catch((er) => toast(er.message));
     if (act === "ip-cost") sheetInstallCost(pid, el.dataset.cid ? Number(el.dataset.cid) : null).catch((er) => toast(er.message));
     if (act === "ip-edit") api(`install_projects?id=eq.${id}&select=*`).then(([p]) => sheetInstallProject(p)).catch((er) => toast(er.message));

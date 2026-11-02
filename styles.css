@@ -635,6 +635,29 @@ table.if-pt td.n { width: 22px; }
 .if-psig > div { flex: 1; border: 1px solid #9aa5a0; border-radius: 6px; padding: 6px; min-height: 64px; font-size: 9pt; display: flex; flex-direction: column; gap: 2px; }
 .if-psig span { margin-top: auto; color: #6b7a74; font-size: 8pt; }
 
+
+/* ---------- graphic progress and project report (D-108) */
+.ring .rg-pending { stroke: var(--line); } .ring .rg-in_progress { stroke: var(--info); } .ring .rg-approved { stroke: var(--ok); } .ring .rg-rejected { stroke: var(--danger); }
+.ring-v { font-size: 20px; font-weight: 800; fill: var(--text); font-family: inherit; }
+.ring-l { font-size: 9px; fill: var(--muted); font-family: inherit; }
+.pr-grid { display: grid; grid-template-columns: 1fr; gap: 0; }
+@media (min-width: 700px) { .pr-grid { grid-template-columns: 1fr 1fr; gap: 0 12px; } }
+.pr-card { display: flex; align-items: center; gap: 12px; }
+.pr-card svg { flex: none; }
+.pr-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pr-t .badge { align-self: flex-start; white-space: normal; }
+.rp-h h1 { font-size: 15pt; margin: 0 0 2px; }
+.rp-sum { display: flex; gap: 14px; align-items: center; margin: 8px 0; padding: 8px; border: 1px solid #c9d1cd; border-radius: 8px; }
+.rp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; flex: 1; font-size: 9pt; }
+.rp-kv { display: flex; justify-content: space-between; gap: 6px; border-bottom: 1px dotted #c9d1cd; padding: 2px 0; }
+.rp-kv span { color: #4b5a6b; }
+.rp-unit { border: 1px solid #c9d1cd; border-radius: 8px; padding: 6px 8px; margin: 6px 0; }
+.rp-uh { display: flex; gap: 10px; align-items: center; }
+.rp-uh h3 { margin: 0; font-size: 11pt; }
+table.rp-st td { font-size: calc(8.5pt * var(--fit, 1)); padding: 1px 4px; }
+.rp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 4px; vertical-align: middle; }
+.rp-note { font-size: 8.5pt; margin-top: 4px; line-height: 1.7; }
+
 @media print {
   body { background: #fff !important; }
   .topbar, .tabbar, .no-print, #toast, .sheet-backdrop, .side-brand, .side-foot, .refresh-btn, .page-credit, .pp-bar, a[data-act="back"] { display: none !important; }

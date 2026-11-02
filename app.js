@@ -489,6 +489,7 @@
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
     return shell("داشبورد", "dashboard", `${areaSwitch()}${chqDue.length ? `<div class="card tap" data-act="dash-area" data-k="sales" style="border-color:var(--warn)"><div class="small"><b>${fa(chqDue.length)} چک پروژه‌های نصب سررسید شده و وصولش ثبت نشده</b> — برای دیدن و ثبت «پاس شد» بزنید.</div></div>` : ""}
       <div class="hero">${BRAND_LINES}<div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
+      ${isStaff() ? `<button class="note-cta" data-act="snote">+ یادداشت برای سرویس ماه بعد<span>هر وقت یادتان آمد؛ با کد اشتراک</span></button>` : ""}
       <div class="dash${closeNote ? " has-side" : ""}"><div class="dash-main">
       ${isStaff() ? `<div class="row dash-search"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
       <div class="actions dash-quick">${quick.join("")}</div>
@@ -1775,6 +1776,68 @@
 
   /* ------------------------------------------------------------------ month close (employee prepares, CEO closes) */
   let closeYM = null;
+  /* ------------------------------------------------------------------ notes for next month's service (D-111) */
+  const ymNow = () => { const [y, m, d] = toEn(todayTehran()).split("-").map(Number), j = g2j(y, m, d); return j.jy * 100 + j.jm; };
+  const ymAdd = (ym, k) => { let y = Math.floor(ym / 100), m = (ym % 100) + k; while (m > 12) { m -= 12; y++; } while (m < 1) { m += 12; y--; } return y * 100 + m; };
+  const ymOf = (iso) => { const [y, m, d] = toEn(iso).split("-").map(Number), j = g2j(y, m, d); return j.jy * 100 + j.jm; };
+  const ymTxt = (ym) => `${MONTHS[(ym % 100) - 1]} ${fa(Math.floor(ym / 100))}`;
+  const noteCard = (n, withContract) => `<div class="card tap" data-act="snote" data-nid="${n.id}" data-cid="${n.contract_id}"><div class="item-head"><div>
+      ${withContract && n.contracts ? `<div class="item-title">${esc(fa(n.contracts.contract_code || ""))} · ${esc((n.contracts.buildings || {}).name || "")}</div>` : ""}
+      <div class="small">${txt(n.note)}</div>${n.needs_part ? `<div class="small"><b>قطعه:</b> ${esc(n.part || "")}</div>` : ""}
+      <div class="small muted">برای سرویس ${ymTxt(n.for_month)} · ثبت ${jdate(n.created_at)}</div></div>
+      <div style="text-align:left">${n.status === "used" ? `<span class="badge ok">به ارجاع اضافه شد</span>` : `<span class="badge info">باز</span>`}${n.needs_part ? `<span class="badge ${n.part_ready ? "ok" : "warn"}">${n.part_ready ? "قطعه آماده" : "قطعه تأمین نشده"}</span>` : ""}</div></div></div>`;
+  function sheetServiceNote(contractId, nid) {
+    (nid ? api(`service_next_notes?id=eq.${nid}&select=*,contracts(contract_code,subscription_code,buildings(name))`) : Promise.resolve([null])).then(([x]) => {
+      const cur = x || {}, base = ymNow(), opts = [base, ymAdd(base, 1), ymAdd(base, 2), ymAdd(base, 3)];
+      if (cur.for_month && !opts.includes(cur.for_month)) opts.unshift(cur.for_month);
+      const def = cur.for_month || ymAdd(base, 1);
+      sheet(`<h3>${nid ? "یادداشت سرویس" : "یادداشت برای سرویس بعد"}</h3>
+        <div class="hint">این یادداشت هنگام ارجاع سرویس آن ماه، خودکار به توضیح ارجاع اضافه می‌شود و در فهرست «بستن ماه» هم می‌آید.</div>
+        ${nid ? `<div class="small"><b>${esc(fa((cur.contracts || {}).contract_code || ""))}</b> · ${esc(((cur.contracts || {}).buildings || {}).name || "")}</div>`
+          : `<label>کد اشتراک یا کد قرارداد</label><input type="text" class="ltr" inputmode="numeric" data-f="code" placeholder="مثلاً ۲۱۱" autocomplete="off"><div class="small" id="sn-hit"></div>`}
+        <label>برای سرویس ماه</label><select data-f="month">${opts.map((o) => `<option value="${o}"${o === def ? " selected" : ""}>${ymTxt(o)}</option>`).join("")}</select>
+        <label>یادداشت</label><textarea data-f="note" rows="3" placeholder="مثلاً: صدای درب طبقه‌ی ۳ بررسی شود">${esc(cur.note || "")}</textarea>
+        <label class="check"><input type="checkbox" data-f="needs"${cur.needs_part ? " checked" : ""}> قطعه لازم دارد (باید قبل از سرویس تأمین شود)</label>
+        <div data-part${cur.needs_part ? "" : " hidden"}><label>قطعه</label><input type="text" data-f="part" value="${esc(cur.part || "")}" placeholder="مثلاً: قفل درب طبقه، لنت ترمز">
+          <label class="check"><input type="checkbox" data-f="ready"${cur.part_ready ? " checked" : ""}> قطعه تأمین شد و آماده‌ی تحویل به سرویس‌کار است</label></div>
+        <div class="actions"><button class="btn" data-act="save">ذخیره</button>${nid && cur.status === "open" ? `<button class="btn secondary danger-text" data-act="off">حذف</button>` : ""}<button class="btn secondary" data-close>انصراف</button></div>`,
+      (el, close) => {
+        const nd = el.querySelector('[data-f="needs"]'); nd.addEventListener("change", () => { el.querySelector("[data-part]").hidden = !nd.checked; });
+        let cid = contractId || cur.contract_id || null, lt = null;
+        const ci = el.querySelector('[data-f="code"]');
+        if (ci) { ci.focus(); ci.addEventListener("input", () => { clearTimeout(lt); cid = null; const v = toEn(ci.value.trim()), hit = el.querySelector("#sn-hit"); hit.textContent = "";
+          if (!v) return; lt = setTimeout(async () => {
+            const rows = await api(`contracts?or=(contract_code.eq.${encodeURIComponent(v)},subscription_code.eq.${encodeURIComponent(v)})&select=id,contract_code,subscription_code,status,buildings(name)&order=id.desc&limit=5`).catch(() => []);
+            const r = rows.find((x) => x.status === "active") || rows[0];
+            if (toEn(ci.value.trim()) !== v) return;
+            if (!r) { hit.innerHTML = `<span class="debt">قراردادی با این کد پیدا نشد</span>`; return; }
+            cid = r.id; hit.innerHTML = `<span class="badge ok">${esc(fa(r.contract_code || ""))}</span> ${esc((r.buildings || {}).name || "")}${r.status !== "active" ? ` <span class="badge warn">قرارداد فعال نیست</span>` : ""}`;
+          }, 350); }); }
+        const body = (status) => ({ contract_id: cid, for_month: Number(el.querySelector('[data-f="month"]').value), note: el.querySelector('[data-f="note"]').value.trim(),
+          needs_part: nd.checked, part: nd.checked ? el.querySelector('[data-f="part"]').value.trim() : null, part_ready: nd.checked && el.querySelector('[data-f="ready"]').checked, status });
+        el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => { if (!cid) throw new Error("کد اشتراک را وارد کنید تا قرارداد پیدا شود"); await rpc("save_service_note", { p_id: nid || null, p: body(cur.status === "used" ? undefined : "open") }); close(); toast("یادداشت ذخیره شد"); route(); }));
+        const off = el.querySelector('[data-act="off"]');
+        if (off) off.addEventListener("click", (e) => guarded(e.target, async () => { if (!confirm("یادداشت حذف شود؟")) return; await rpc("save_service_note", { p_id: nid, p: body("cancelled") }); close(); toast("حذف شد"); route(); }));
+      });
+    }).catch((er) => toast(er.message));
+  }
+  async function notesForMonth(ym) {
+    return api(`service_next_notes?for_month=eq.${ym}&status=neq.cancelled&select=*,contracts(contract_code,buildings(name))&order=needs_part.desc,id`).catch(() => []);
+  }
+  function notesListHtml(ym, list) {
+    const parts = list.filter((n) => n.needs_part && !n.part_ready);
+    return `<div class="section-title"><h2>یادداشت‌های سرویس ${ymTxt(ym)}</h2><span class="small muted">${fa(list.length)} یادداشت</span></div>
+      ${parts.length ? `<div class="card" style="border-color:var(--warn)"><div class="small"><b>${fa(parts.length)} قطعه باید پیش از سرویس تأمین شود:</b></div>${parts.map((n) => `<div class="small">• ${esc(fa((n.contracts || {}).contract_code || ""))} ${esc(((n.contracts || {}).buildings || {}).name || "")}: ${esc(n.part || "")}</div>`).join("")}</div>` : ""}
+      ${list.length ? list.map((n) => noteCard(n, true)).join("") : `<div class="card empty">برای این ماه یادداشتی ثبت نشده</div>`}
+      ${list.length ? `<div class="page-actions"><button class="btn secondary" data-act="snote-csv" data-ym="${ym}">خروجی اکسل</button></div>` : ""}`;
+  }
+  async function viewServiceNotes() {
+    const ym = Number((location.hash.match(/[?&]m=(\d{6})/) || [])[1]) || ymAdd(ymNow(), 1);
+    const list = await notesForMonth(ym);
+    return shell("یادداشت‌های سرویس", "services", `<a href="#/plan" data-act="back" class="small">→ بازگشت</a>
+      <div class="chips" style="margin-top:8px">${[ymNow(), ymAdd(ymNow(), 1), ymAdd(ymNow(), 2)].map((x) => `<button data-act="go" data-href="#/snotes?m=${x}" class="${x === ym ? "on" : ""}">${ymTxt(x)}</button>`).join("")}</div>
+      <div class="page-actions"><button class="btn" data-act="snote">+ یادداشت برای سرویس بعد</button></div>${notesListHtml(ym, list)}`);
+  }
   async function viewMonthClose() {
     const [setting] = await api("app_settings?key=eq.billing_start&select=value");
     const [sy, sm] = (setting ? setting.value : "1405-08").split("-").map(Number);
@@ -1793,6 +1856,7 @@
     const rows = await rpc("month_close_preview", { p_jy: jy, p_jm: jm });
     const pend = rows.filter((r) => r.unresolved > 0), add = rows.filter((r) => r.to_add > 0), done = rows.filter((r) => !r.unresolved && !r.to_add);
     const closed = cur && cur.status === "closed";
+    const nxt = ymAdd(closeYM, 1), nextList = await notesForMonth(nxt);
     const row = (r, note, cls) => `<tr><td><a href="#/contract/${r.contract_id}">${esc(fa(r.contract_code))}</a><div class="small muted">${esc(r.building_name || "")}</div></td>
       <td style="text-align:left" class="small ${cls || ""}">${note}</td></tr>`;
     let action = "";
@@ -1816,7 +1880,8 @@
         <div class="stat"><div class="label">کامل</div><div class="value">${num(done.length)}</div></div></div>
       ${pend.length ? `<div class="section-title"><h2>منتظر تأیید</h2></div><div class="card"><table class="list"><tbody>${pend.map((r) => row(r, `${fa(r.unresolved)} سرویس منتظر تأیید`, "warn")).join("")}</tbody></table></div>` : ""}
       ${add.length ? `<div class="section-title"><h2>${closed ? "" : "با بستن ماه «انجام‌نشده» ثبت می‌شود"}</h2></div><div class="card"><table class="list"><tbody>${add.map((r) => row(r, `${fa(r.to_add)} از ${fa(r.services_per_month)} سرویس${r.services_per_month > 1 ? " — سهم آن حذف می‌شود" : " — شارژ منهای کسر قراردادی"}`, "debt")).join("")}</tbody></table></div>` : ""}
-      ${done.length ? `<div class="section-title"><h2>کامل</h2></div><div class="card"><table class="list"><tbody>${done.map((r) => row(r, `${fa(r.confirmed)} تأییدشده${r.missed ? ` · ${fa(r.missed)} انجام‌نشده` : ""}`, "credit")).join("")}</tbody></table></div>` : ""}`);
+      ${done.length ? `<div class="section-title"><h2>کامل</h2></div><div class="card"><table class="list"><tbody>${done.map((r) => row(r, `${fa(r.confirmed)} تأییدشده${r.missed ? ` · ${fa(r.missed)} انجام‌نشده` : ""}`, "credit")).join("")}</tbody></table></div>` : ""}
+      ${notesListHtml(nxt, nextList)}`);
   }
 
   /* ------------------------------------------------------------------ reports (CEO) */
@@ -2161,7 +2226,7 @@
     return shell("برنامه سرویس", "services", `
       <div class="card"><label>روز برنامه</label>${datePickerHtml("pday", planDate)}
         <div class="actions"><button class="btn secondary small" data-act="plan-day" data-d="-1">روز قبل</button><button class="btn secondary small" data-act="plan-go">نمایش</button><button class="btn secondary small" data-act="plan-day" data-d="1">روز بعد</button></div></div>
-      <div class="page-actions"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button>${byTech.size ? `<button class="btn secondary" data-act="plan-print">چاپ برنامه‌ی این روز</button>` : ""}</div>
+      <div class="page-actions"><button class="btn" data-act="new-assignment">+ ارجاع سرویس</button><button class="btn secondary" data-act="go" data-href="#/snotes">یادداشت‌های سرویس ماه بعد</button>${byTech.size ? `<button class="btn secondary" data-act="plan-print">چاپ برنامه‌ی این روز</button>` : ""}</div>
       <div class="section-title"><h2>${dayLabel(planDate)} · ${fa(rows.filter((a) => a.status !== "cancelled").length)} سرویس</h2></div>
       ${byTech.size ? [...byTech.entries()].map(([t, list]) => `<div class="section-title"><h2 class="small">${esc(t)} (${fa(list.length)})</h2></div>${list.map((a) => assignmentCard(a, false)).join("")}`).join("")
         : `<div class="card empty">برای این روز سرویسی ارجاع نشده است</div>`}`);
@@ -2189,21 +2254,26 @@
   }
   async function sheetNewAssignment() {
     const techs = (await api("technicians?status=eq.active&select=id,name,skills&order=name")).filter((t) => (t.skills || []).includes("service"));
-    const targets = await rpc("service_targets");
+    const [targets, openNotes] = await Promise.all([rpc("service_targets"), api("service_next_notes?status=eq.open&select=id,contract_id,for_month,note,needs_part,part,part_ready").catch(() => [])]);
+    const notesOf = (cid, ym) => openNotes.filter((n) => n.contract_id === cid && n.for_month <= ym);
+    const noteText = (n) => `یادداشت: ${n.note}${n.needs_part ? ` (قطعه: ${n.part}${n.part_ready ? "، آماده" : "، تأمین نشده"})` : ""}`;
     sheet(`<h3>ارجاع سرویس</h3>
       <label>سرویس‌کار</label><select data-field="tech">${techs.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select>
       <label>روز سرویس</label>${datePickerHtml("adate", planDate || addDays(todayTehran(), 1))}
       <label>ساختمان‌ها <span class="small muted" data-field="cnt"></span></label>
       <input type="search" data-field="q" placeholder="جست‌وجوی ساختمان، کد یا آدرس">
       <div class="pick-list" data-field="list">${targets.map((t) => `<div class="pick-wrap" data-s="${esc(toEn(t.building_name + " " + t.contract_code + " " + (t.address || "")))}"><label class="pick"><input type="checkbox" value="${t.contract_id}">
-        <span><b>${esc(fa(t.contract_code))}</b> — ${esc(t.building_name)}<br><span class="small muted">${esc(t.address || "")}</span></span></label>
+        <span><b>${esc(fa(t.contract_code))}</b> — ${esc(t.building_name)}${openNotes.some((n) => n.contract_id === t.contract_id) ? ` <span class="badge warn">یادداشت</span>` : ""}<br><span class="small muted">${esc(t.address || "")}</span></span></label>
         <input type="text" class="pick-note" data-note="${t.contract_id}" placeholder="کار اضافه برای این کد (اختیاری)" hidden></div>`).join("")}</div>
       <label>توضیح مشترک برای همه‌ی ارجاع‌ها</label><input type="text" data-field="note" placeholder="اختیاری">
       <div class="actions"><button class="btn" data-act="save">ارجاع</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       const cnt = () => { el.querySelector('[data-field="cnt"]').textContent = `(${fa(el.querySelectorAll(".pick input:checked").length)} انتخاب)`; };
       el.querySelector('[data-field="list"]').addEventListener("change", (e) => {
-        if (e.target.type === "checkbox") { const n = el.querySelector(`[data-note="${e.target.value}"]`); n.hidden = !e.target.checked; if (e.target.checked) n.focus(); }
+        if (e.target.type === "checkbox") { const n = el.querySelector(`[data-note="${e.target.value}"]`); n.hidden = !e.target.checked;
+          const ns = notesOf(Number(e.target.value), ymOf(readDate(el, "adate")));
+          if (e.target.checked && ns.length && !n.value.trim()) n.value = ns.map(noteText).join(" · ");
+          if (e.target.checked) n.focus(); }
         cnt();
       }); cnt();
       el.querySelector('[data-field="q"]').addEventListener("input", (e) => {
@@ -2216,7 +2286,8 @@
         const day = readDate(el, "adate"), tech = Number(el.querySelector('[data-field="tech"]').value), common = el.querySelector('[data-field="note"]').value.trim();
         const noteFor = (cid) => [el.querySelector(`[data-note="${cid}"]`).value.trim(), common].filter(Boolean).join("\n") || null;
         try {
-          await api("service_assignments", { method: "POST", body: ids.map((cid) => ({ contract_id: cid, technician_id: tech, planned_date: day, note: noteFor(cid) })) });
+          const made = await api("service_assignments", { method: "POST", prefer: "return=representation", body: ids.map((cid) => ({ contract_id: cid, technician_id: tech, planned_date: day, note: noteFor(cid) })) });
+          for (const a of made || []) { const ns = notesOf(a.contract_id, ymOf(day)).filter((n) => (a.note || "").includes(n.note)); if (ns.length) await rpc("use_service_notes", { p_ids: ns.map((n) => n.id), p_assignment: a.id }).catch(() => {}); }
         } catch (er) {
           if (/duplicate|unique|23505/i.test(er.message)) throw new Error("یکی از این ساختمان‌ها برای همین روز قبلاً ارجاع شده است");
           throw er;
@@ -4143,6 +4214,7 @@
         case "faults": html = await viewFaults(); break;
         case "services": html = role() === "TECHNICIAN" ? await viewTechServices() : await viewServices(); break;
         case "plan": html = isStaff() ? await viewPlan() : await viewDashboard(); break;
+        case "snotes": case (page.startsWith("snotes?") ? page : "\u0000"): html = isStaff() ? await viewServiceNotes() : await viewDashboard(); break;
         case "locations": html = ["CEO", "REPAIR_MANAGER"].includes(role()) ? await viewLocations() : await viewDashboard(); break;
         case "team": html = ["CEO", "REPAIR_MANAGER"].includes(role()) ? await viewTeam() : await viewDashboard(); break;
         case "contracts": html = role() === "TECHNICIAN" ? await viewFaults() : await viewContracts(); break;
@@ -4296,6 +4368,9 @@
     if (act === "plan-go") { planDate = readDate(document, "pday"); route(); }
     if (act === "plan-day") { planDate = addDays(readDate(document, "pday"), Number(el.dataset.d)); route(); }
     if (act === "assignment-note") sheetAssignmentNote(Number(el.dataset.id), el.dataset.note || "");
+    if (act === "snote") sheetServiceNote(el.dataset.cid ? Number(el.dataset.cid) : null, el.dataset.nid ? Number(el.dataset.nid) : null);
+    if (act === "snote-csv") notesForMonth(Number(el.dataset.ym)).then((l) => downloadCsv(`yaddasht-servis-${el.dataset.ym}.csv`, ["کد قرارداد", "ساختمان", "یادداشت", "قطعه", "قطعه آماده", "وضعیت"],
+      l.map((n) => [(n.contracts || {}).contract_code || "", ((n.contracts || {}).buildings || {}).name || "", n.note, n.part || "", n.needs_part ? (n.part_ready ? "بله" : "خیر") : "", n.status === "used" ? "به ارجاع اضافه شد" : "باز"]))).catch((er) => toast(er.message));
     if (act === "cancel-assignment" && confirm("این ارجاع لغو شود؟")) api(`service_assignments?id=eq.${el.dataset.id}`, { method: "PATCH", body: { status: "cancelled", updated_at: new Date().toISOString() } }).then(() => { toast("ارجاع لغو شد"); route(); }).catch((er) => toast(er.message));
     if (act === "loc-decide") { const okd = el.dataset.ok === "1"; if (confirm(okd ? "این موقعیت تأیید شود؟" : "این موقعیت رد شود؟")) rpc("decide_building_location", { p_building_id: Number(el.dataset.id), p_approve: okd }).then(() => { toast(okd ? "موقعیت تأیید شد" : "موقعیت رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "go-reports") location.hash = "#/reports";

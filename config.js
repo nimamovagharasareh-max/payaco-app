@@ -3,6 +3,6 @@
 window.PAYACO_CONFIG = {
   supabaseUrl: "https://whwsxctalcukmbawakre.supabase.co",
   supabaseKey: "sb_publishable_Q5UZvO2OCJ0Ivx7Ouo7Ijw_krQ-_oHe",
-  version: "2.44.2",
+  version: "2.45.0",
   nimaUrl: "https://nima-ai.ir"
 };

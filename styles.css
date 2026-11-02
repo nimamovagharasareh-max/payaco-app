@@ -667,6 +667,12 @@ table.rp-st td { font-size: calc(8.5pt * var(--fit, 1)); padding: 1px 4px; }
 .ip-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 .ip-tabs button span { font-weight: 400; opacity: .8; margin-inline-start: 4px; }
 
+
+/* ---------- quick note for next month's service on the dashboard (D-111) */
+.note-cta { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; margin: 10px 0 4px; padding: 14px 16px; border-radius: 16px; border: 0;
+  background: linear-gradient(180deg, #2f9142, #1f6a2c); color: #fff; font: inherit; font-size: 1.05rem; font-weight: 800; text-align: right; box-shadow: 0 6px 16px rgba(31, 106, 44, .28); cursor: pointer; }
+.note-cta span { font-size: .78rem; font-weight: 400; opacity: .9; }
+
 @media print {
   body { background: #fff !important; }
   .topbar, .tabbar, .no-print, #toast, .sheet-backdrop, .side-brand, .side-foot, .refresh-btn, .page-credit, .pp-bar, a[data-act="back"] { display: none !important; }

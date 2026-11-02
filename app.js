@@ -2547,9 +2547,14 @@
       host.appendChild(p); pages.push(p); return p.querySelector(".pp-body");
     };
     let body = newPage(); body.innerHTML = head;
-    for (const b of blocks) {
-      body.insertAdjacentHTML("beforeend", `<div class="pp-blk">${b}</div>`);
-      if (body.scrollHeight > body.clientHeight + 1 && body.children.length > 1) { body.lastElementChild.remove(); body = newPage(); body.insertAdjacentHTML("beforeend", `<div class="pp-blk">${b}</div>`); }
+    const over = () => body.scrollHeight > body.clientHeight + 1;
+    for (const b0 of blocks) {
+      // a block is HTML, or { html, newPage: start on a fresh page, fit: shrink its text until it fits the rest of this page }
+      const b = typeof b0 === "string" ? { html: b0 } : b0;
+      if (b.newPage && body.children.length) body = newPage();
+      body.insertAdjacentHTML("beforeend", `<div class="pp-blk">${b.html}</div>`);
+      if (over() && b.fit) { const el = body.lastElementChild; for (let k = 0.95; k >= 0.6 && over(); k -= 0.05) el.style.setProperty("--fit", k.toFixed(2)); }
+      if (over() && body.children.length > 1) { body.lastElementChild.remove(); body = newPage(); body.insertAdjacentHTML("beforeend", `<div class="pp-blk">${b.html}</div>`); }
     }
     pages.forEach((p, i) => { p.querySelector(".pp-no").innerHTML = `<span>صفحه ${fa(i + 1)} از ${fa(pages.length)}</span>${meta.form ? `<span>·</span><span class="pp-iso">${esc(meta.form)} · Rev.${String(meta.rev || 0).padStart(2, "0")}</span><span>· ابلاغ ${esc(meta.issued || "")}</span>` : ""}`; });
     return pages;
@@ -3102,14 +3107,14 @@
     const p = q.project || q.install_projects || {}, s = IQ_STATE(q), sp = q.spec || {};
     const opts = (q.options || []).map((o) => { const v = o.vat_rial ?? (q.vat_exempt ? 0 : Math.round(Number(o.amount_rial) * VAT_RATE / 100)), t = o.total_rial ?? Number(o.amount_rial) + v; return { ...o, v, t }; });
     const head = `<div class="iq-hero"><div class="iq-hero-t"><span class="iq-kicker">پیشنهاد قیمت</span><h1>آسانسور ${esc(sp.usage || "مسافربر")}${p.title ? ` · ${esc(p.title)}` : ""}</h1>
-        <div class="iq-hero-s">${esc(p.city || "اهواز")} · نسخه ${fa(q.version || 1)}${q.issued_at ? ` · صدور ${jtime(q.issued_at)}` : ""}</div></div>
+        <div class="iq-hero-s">${p.address ? `<span class="iq-addr">${esc(fa(p.address))}</span>` : ""}${esc(p.city || "اهواز")} · نسخه ${fa(q.version || 1)}${q.issued_at ? ` · صدور ${jtime(q.issued_at)}` : ""}</div></div>
         <div class="iq-valid"><b>${fa(q.valid_hours || 24)}</b><span>ساعت اعتبار</span>${q.valid_until ? `<em>تا ${jtime(q.valid_until)}</em>` : ""}${draft ? "" : `<i>${esc(s[0])}</i>`}</div></div>`;
     const tile = (label, value, unit) => value ? `<div class="iq-tile"><span>${label}</span><b>${value}</b>${unit ? `<em>${unit}</em>` : ""}</div>` : "";
     const tiles = [tile("نوع آسانسور", esc([sp.drive, sp.room].filter(Boolean).join(" · "))), tile("ظرفیت", sp.persons_from ? rangeTxt(sp.persons_from, sp.persons_to) : "", sp.kg_from ? `نفر · ${rangeTxt(sp.kg_from, sp.kg_to)} کیلوگرم` : "نفر"),
       tile("تعداد توقف", sp.stops ? fa(sp.stops) : "", "توقف"), tile("سرعت نامی", sp.speed ? fa(String(sp.speed).replace(".", "٫")) : "", "متر بر ثانیه"),
       tile("درب", DOOR_TXT[Number(sp.doors)] || "", ""), tile("سیستم تعلیق", sp.susp && sp.drive !== "هیدرولیک" ? fa(sp.susp) : "", ""), tile("تعداد دستگاه", fa(sp.units || 1), "دستگاه")].join("");
     const tech = (q.tech_items || []).map((t, i) => `<div class="iq-li"><span class="iq-n">${fa(i + 1)}</span><span>${esc(fa(t))}</span></div>`);
-    const techBlocks = []; for (let i = 0; i < tech.length; i += 4) techBlocks.push(`<div class="iq-grid2">${tech.slice(i, i + 4).join("")}</div>`);
+
     const best = opts.length > 1 ? opts.reduce((a, o) => (o.t < a.t ? o : a), opts[0]) : null;
     const cards = opts.map((o, k) => `<div class="iq-opt${best === o ? " best" : ""}"><div class="iq-opt-h"><span class="iq-n">${fa(k + 1)}</span><b>${esc(o.label)}</b>${best === o ? `<i>اقتصادی‌ترین</i>` : ""}</div>
         <div class="iq-amt">${num(o.t)}<small>ریال</small></div><div class="iq-words">${numWords(o.t)} ریال</div>
@@ -3118,8 +3123,9 @@
     const blocks = [
       `<div class="iq-to">${esc(q.recipient || "")}</div><p class="iq-lead">${esc(fa(q.intro || ""))}</p>`,
       tiles ? `<div class="iq-sec">مشخصات دستگاه</div><div class="iq-tiles">${tiles}</div>` : "",
-      `<div class="iq-sec">مشخصات فنی و برند تجهیزات</div>${techBlocks[0] || ""}`, ...techBlocks.slice(1),
-      `<div class="iq-sec">پیشنهاد قیمت</div><p class="iq-p">${esc(fa(q.price_intro || ""))}</p>${optBlocks[0] || ""}`, ...optBlocks.slice(1),
+      // Nima: all technical specs on page 1 (text shrinks to fit), the price on its own page
+      { html: `<div class="iq-sec">مشخصات فنی و برند تجهیزات</div><div class="iq-grid2 iq-fit">${tech.join("")}</div>`, fit: true },
+      { html: `<div class="iq-sec" style="margin-top:0">پیشنهاد قیمت</div><div class="iq-to">${esc(q.recipient || "")}</div><p class="iq-p">${esc(fa(q.price_intro || ""))}</p>${optBlocks[0] || ""}`, newPage: true }, ...optBlocks.slice(1),
       ...((q.notes_items || []).length ? [`<div class="iq-note">${q.notes_items.map((n) => `<div>${esc(fa(n))}</div>`).join("")}</div>`] : []),
       `<div class="pp-box y iq-cond"><h3>شرایط</h3>${(q.conditions || []).map((c, i) => `<div>${fa(i + 1)}. ${esc(fa(c))}</div>`).join("")}<div>${fa((q.conditions || []).length + 1)}. اعتبار قیمت اعلام‌شده تا ${fa(q.valid_hours || 24)} ساعت پس از تاریخ صدور${q.valid_until ? ` (${jtime(q.valid_until)})` : ""} می‌باشد.</div></div>`,
       `<div class="iq-sign"><span>با تقدیم احترام</span><b>آسانسور پایاکو</b><em>با شما تا اوج...</em></div>`].filter(Boolean);

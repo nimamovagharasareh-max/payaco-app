@@ -3637,8 +3637,8 @@
   async function sheetInstallReport(projectId) {
     if (role() !== "CEO") return printInstallReport(projectId, false);
     sheet(`<h3>گزارش وضعیت پروژه</h3><div class="hint">گزارش آماده‌ی چاپ یا PDF روی سربرگ.</div>
-      <div class="actions"><button class="btn" data-r="client">برای کارفرما (بدون اطلاعات مالی داخلی)</button></div>
-      <div class="actions"><button class="btn secondary" data-r="internal">داخلی (با دریافتی‌ها، هزینه‌ها و سود)</button></div>
+      <div class="actions"><button class="btn" data-r="client">برای کارفرما (با قرارداد، پرداخت‌ها و مانده؛ بدون هزینه و سود)</button></div>
+      <div class="actions"><button class="btn secondary" data-r="internal">داخلی (به‌علاوه‌ی هزینه‌ها و سود)</button></div>
       <div class="actions"><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => el.addEventListener("click", (e) => { const b = e.target.closest("[data-r]"); if (!b) return; close(); printInstallReport(projectId, b.dataset.r === "internal").catch((er) => toast(er.message)); }));
   }
@@ -3646,7 +3646,7 @@
     const ceo = role() === "CEO";
     const [[p], c, cts, ks, rcs, costs, company] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), loadControl(projectId),
       api(`install_project_contacts?project_id=eq.${projectId}&active=eq.true&select=name,mobile,role&order=sort`),
-      ceo ? api(`install_contracts?project_id=eq.${projectId}&active=eq.true&select=*`) : [], internal ? api(`install_receipts?project_id=eq.${projectId}&active=eq.true&select=*&order=received_on`) : [],
+      ceo ? api(`install_contracts?project_id=eq.${projectId}&active=eq.true&select=*`) : [], ceo ? api(`install_receipts?project_id=eq.${projectId}&active=eq.true&select=*&order=received_on`) : [],
       internal ? api(`install_costs?project_id=eq.${projectId}&active=eq.true&select=*`) : [], rpc("get_company_profile")]);
     const k = ks[0] || null, pcts = c.units.map((u) => unitPct(c.defs, c.by[u.id])), prog = pcts.length ? Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length) : 0, ti = timeInfo(p, prog);
     const kv = (l, v) => `<div class="rp-kv"><span>${l}</span><b>${v}</b></div>`;
@@ -3665,13 +3665,20 @@
         ${rej.length ? `<div class="rp-note"><b>اشکالات باز:</b> ${rej.map((d) => `${fa(d.code)} — ${esc((b[d.code] || {}).notes || "")}`).join("؛ ")}</div>` : ""}
         ${pg.length ? `<div class="rp-note"><b>کالای تحویل‌شده، هنوز نصب‌نشده:</b> ${pg.map((x) => `${esc(lines(x.items)[0] || "")} (تحویل ${jdate(x.delivered_on)}، مرحله‌ی ${fa(x.stage_code)}${x.pending_reason ? `، علت: ${esc(x.pending_reason)}` : ""})`).join("؛ ")}</div>` : ""}</div>`, fit: true }); });
     if (c.dlv.length) blocks.push(`<div class="if-ps"><h3><span>G</span>صورتجلسه‌های تحویل کالا</h3><table class="if-pt">${c.dlv.map((x) => `<tr><td>${jdate(x.delivered_on)}</td><td style="text-align:right">${esc(lines(x.items).join("، "))}</td><td>${x.receiver ? esc(x.receiver) : ""}</td></tr>`).join("")}</table></div>`);
-    if (internal && ceo) {
+    if (ceo && (k || rcs.length)) {
       const got = rcs.filter((r) => r.status === "received" || r.status === "cleared").reduce((a, r) => a + Number(r.amount_rial), 0), pend = rcs.filter((r) => r.status === "pending").reduce((a, r) => a + Number(r.amount_rial), 0);
-      const cost = costs.reduce((a, x) => a + Number(x.amount_rial), 0), byCat = {}; costs.forEach((x) => { byCat[x.category] = (byCat[x.category] || 0) + Number(x.amount_rial); });
-      blocks.push(`<div class="if-ps"><h3><span>₪</span>وضعیت مالی (داخلی)</h3><div class="rp-grid">${k ? kv("مبلغ قرارداد", money(k.amount_rial)) : ""}${kv("وصول‌شده", money(got))}${pend ? kv("چک‌های در جریان", money(pend)) : ""}
-        ${k ? kv("مانده‌ی طلب", money(Number(k.amount_rial) - got)) : ""}${kv("قیمت تمام‌شده تا امروز", money(cost))}${k ? kv("سود ناخالص", money(Number(k.amount_rial) - cost)) : ""}</div>
-        ${cost ? `<table class="if-pt">${Object.entries(COST_CAT).filter(([x]) => byCat[x]).map(([x, l]) => `<tr><td style="text-align:right">${l}</td><td>${money(byCat[x])}</td></tr>`).join("")}</table>` : ""}
-        ${rcs.some((r) => r.method === "cheque") ? `<table class="if-pt"><tr><th>چک</th><th>مبلغ</th><th>سررسید</th><th>وضعیت</th></tr>${rcs.filter((r) => r.method === "cheque").map((r) => `<tr><td class="ltr">${esc(fa(r.cheque_no || ""))}</td><td>${money(r.amount_rial)}</td><td>${jdate(r.cheque_due)}</td><td>${chequeDue(r) ? "سررسید شده، وصول ثبت نشده" : (RC_STATUS[r.status] || [r.status])[0]}${r.cleared_on ? ` (${jdate(r.cleared_on)})` : ""}</td></tr>`).join("")}</table>` : ""}</div>`);
+      const bounced = rcs.filter((r) => r.status === "bounced").reduce((a, r) => a + Number(r.amount_rial), 0);
+      const rstat = (r) => r.method !== "cheque" ? "دریافت شد" : chequeDue(r) ? "سررسید شده، وصول ثبت نشده" : `${(RC_STATUS[r.status] || [r.status])[0]}${r.cleared_on ? ` (${jdate(r.cleared_on)})` : ""}`;
+      blocks.push(`<div class="if-ps"><h3><span>₪</span>وضعیت پرداخت‌ها و حساب</h3><div class="rp-grid">${k ? kv("مبلغ قرارداد", money(k.amount_rial)) : ""}${kv("پرداخت‌شده (وصول‌شده)", money(got))}
+        ${pend ? kv("چک‌های در جریان (وصول‌نشده)", money(pend)) : ""}${bounced ? kv("چک برگشتی", money(bounced)) : ""}${k ? kv("مانده‌ی حساب", money(Number(k.amount_rial) - got)) : ""}${k && pend ? kv("مانده پس از وصول چک‌های در جریان", money(Number(k.amount_rial) - got - pend)) : ""}</div>
+        ${k && k.payment_terms ? `<div class="rp-note"><b>نحوه‌ی پرداخت طبق قرارداد:</b> ${esc(k.payment_terms).replace(/\n/g, "؛ ")}</div>` : ""}
+        ${rcs.length ? `<table class="if-pt"><tr><th>تاریخ</th><th>نحوه</th><th>مبلغ</th><th>شماره چک / سررسید</th><th>وضعیت</th></tr>${rcs.map((r) => `<tr><td>${jdate(r.received_on)}</td><td>${RC_METHOD[r.method]}</td><td>${money(r.amount_rial)}</td>
+          <td>${r.method === "cheque" ? `<bdi dir="ltr">${esc(fa(r.cheque_no || ""))}</bdi> · ${jdate(r.cheque_due)}` : ""}</td><td>${rstat(r)}</td></tr>`).join("")}</table>` : `<div class="rp-note">پرداختی ثبت نشده است.</div>`}</div>`);
+      if (internal) {
+        const cost = costs.reduce((a, x) => a + Number(x.amount_rial), 0), byCat = {}; costs.forEach((x) => { byCat[x.category] = (byCat[x.category] || 0) + Number(x.amount_rial); });
+        blocks.push(`<div class="if-ps"><h3><span>₪</span>هزینه‌ها و سود (داخلی)</h3><div class="rp-grid">${kv("قیمت تمام‌شده تا امروز", money(cost))}${k ? kv("سود ناخالص", money(Number(k.amount_rial) - cost)) : ""}</div>
+          ${cost ? `<table class="if-pt">${Object.entries(COST_CAT).filter(([x]) => byCat[x]).map(([x, l]) => `<tr><td style="text-align:right">${l}</td><td>${money(byCat[x])}</td></tr>`).join("")}</table>` : ""}</div>`);
+      }
     }
     openPrint(`گزارش پروژه ${p.install_code ? fa(p.install_code) : esc(p.title)}`, (host) => paginate(host, { no: p.install_code ? `نصب ${fa(p.install_code)}` : "—", date: jdate(todayTehran()) }, company || {}, head, blocks, {}));
   }

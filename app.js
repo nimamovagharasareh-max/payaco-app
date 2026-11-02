@@ -379,9 +379,18 @@
   const areaSwitch = () => role() === "CEO" ? `<div class="area-switch" role="tablist">
       <button type="button" role="tab" data-act="dash-area" data-k="sales" class="${dashArea === "sales" ? "on" : ""}" aria-selected="${dashArea === "sales"}"><b>فروش و نصب</b><span>برآورد، پیشنهاد قیمت، پروژه‌های نصب</span></button>
       <button type="button" role="tab" data-act="dash-area" data-k="service" class="${dashArea === "service" ? "on" : ""}" aria-selected="${dashArea === "service"}"><b>خدمات پس از فروش</b><span>سرویس، خرابی، قراردادها و صورتحساب‌ها</span></button></div>` : "";
+  // D-107: pending cheques of installation projects that are due (or due within a week); a due cheque is not "bounced" by itself
+  async function dueCheques(days) {
+    const lim = (() => { const d = new Date(toEn(todayTehran()) + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); })();
+    return api(`install_receipts?active=eq.true&method=eq.cheque&status=eq.pending&cheque_due=lte.${lim}&select=id,project_id,amount_rial,cheque_no,cheque_due,bank,install_projects(title,install_code)&order=cheque_due`).catch(() => []);
+  }
+  const chequeRow = (r) => { const od = r.cheque_due <= toEn(todayTehran()), p = r.install_projects || {};
+    return `<div class="card tap" data-act="go" data-href="#/install/${r.project_id}"${od ? ' style="border-color:var(--warn)"' : ""}><div class="item-head"><div><div class="item-title">${money(r.amount_rial)} · چک <bdi dir="ltr">${esc(fa(r.cheque_no || ""))}</bdi></div>
+      <div class="small muted">${p.install_code ? `کد ${fa(p.install_code)} · ` : ""}${esc(p.title || "")} · سررسید ${jdate(r.cheque_due)}${r.bank ? ` · ${esc(r.bank)}` : ""}</div></div>
+      <div style="text-align:left"><span class="badge ${od ? "warn" : "info"}">${od ? "سررسید شده" : "سررسید نزدیک"}</span><button class="btn small" data-act="ip-rc-clear" data-rid="${r.id}">پاس شد</button></div></div></div>`; };
   async function viewSalesDashboard() {
-    const [ps, qs] = await Promise.all([api("install_projects?select=id,title,client_name,city,stage,updated_at&order=updated_at.desc"),
-      api("install_quotes?select=id,project_id,status,valid_until,document_number,options&order=id.desc")]);
+    const [ps, qs, chq] = await Promise.all([api("install_projects?select=id,title,client_name,city,stage,updated_at&order=updated_at.desc"),
+      api("install_quotes?select=id,project_id,status,valid_until,document_number,options&order=id.desc"), dueCheques(7)]);
     const now = new Date(), by = (k) => ps.filter((p) => p.stage === k).length;
     const drafts = qs.filter((q) => q.status === "draft"), valid = qs.filter((q) => q.status === "issued" && new Date(q.valid_until) > now);
     const st = (label, v, cls, href) => `<div class="stat ${cls} tap" data-act="go" data-href="${href}"><div class="label">${label}</div><div class="value">${num(v)}</div></div>`;
@@ -394,13 +403,14 @@
       <div class="stats">${st("در مرحله‌ی برآورد", by("estimate"), by("estimate") ? "warn" : "calm", "#/install")}${st("پیشنهاد داده شده", by("quoted"), "tone-info", "#/install")}
         ${st("قرارداد بسته شد", by("won"), "tone-brand", "#/install")}${st("پیشنهاد معتبر (منتظر پاسخ)", valid.length, valid.length ? "tone-brand" : "calm", "#/install")}</div>
       ${drafts.length ? `<div class="hint">${fa(drafts.length)} پیش‌نویس پیشنهاد هنوز صادر نشده است.</div>` : ""}
+      ${chq.length ? `<div class="section-title"><h2>چک‌های سررسید (وصول ثبت نشده)</h2></div>${chq.map(chequeRow).join("")}` : ""}
       <div class="section-title"><h2>آخرین پروژه‌ها</h2><a href="#/install" class="small">همه</a></div>
       ${ps.length ? ps.slice(0, 8).map(card).join("") : `<div class="card empty">هنوز پروژه‌ی نصبی ثبت نشده</div>`}
       <div class="hint">قرارداد نصب قدم بعدی این بخش است و به همین پرونده‌ها وصل می‌شود.</div>`);
   }
   async function viewDashboard() {
     if (role() === "CEO" && dashArea === "sales") return viewSalesDashboard();
-    const d = await rpc("get_dashboard");
+    const [d, chqDue] = await Promise.all([rpc("get_dashboard"), role() === "CEO" ? dueCheques(0) : []]);
     const urgent = await api("faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,needs_text,buildings(name)&status=in.(reported,assigned,in_progress)&order=priority.asc,reported_at.desc&limit=5");
     const stats = [];
     // every tile opens the page behind its number (D-66)
@@ -476,7 +486,7 @@
     const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
     const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
-    return shell("داشبورد", "dashboard", `${areaSwitch()}
+    return shell("داشبورد", "dashboard", `${areaSwitch()}${chqDue.length ? `<div class="card tap" data-act="dash-area" data-k="sales" style="border-color:var(--warn)"><div class="small"><b>${fa(chqDue.length)} چک پروژه‌های نصب سررسید شده و وصولش ثبت نشده</b> — برای دیدن و ثبت «پاس شد» بزنید.</div></div>` : ""}
       <div class="hero">${BRAND_LINES}<div class="hero-txt"><div class="hero-t">سلام ${esc((state.profile.full_name || "").split(" ")[0])}، ${greet}</div><div class="hero-s">${(() => { const t = toEn(todayTehran()).split("-").map(Number), j = g2j(t[0], t[1], t[2]); return `${new Intl.DateTimeFormat("fa-IR", { weekday: "long", timeZone: "Asia/Tehran" }).format(new Date())} ${fa(j.jd)} ${MONTHS[j.jm - 1]} ${fa(j.jy)}`; })()}</div><div class="hero-slogan">با شما تا اوج...</div></div><div class="floor-ind tap" data-act="go" data-href="${d.emergency_faults ? "#/faults" : d.pending_services ? "#/services" : "#/faults"}" data-ff="${d.emergency_faults ? "emergency" : "open"}" data-sf="pending" aria-label="${esc(focus[1])}: ${num(focus[0])}"><div class="floor-screen"><span class="floor-arrow">${icon("up")}</span><span class="floor-num">${num(focus[0])}</span></div><div class="floor-lbl">${focus[1]}</div></div></div>
       <div class="dash${closeNote ? " has-side" : ""}"><div class="dash-main">
       ${isStaff() ? `<div class="row dash-search"><input type="search" id="dsearch" placeholder="جست‌وجوی قرارداد: کد یا نام ساختمان" style="flex:1" enterkeyhint="search"><button class="btn secondary small" data-act="dash-search">جست‌وجو</button></div>` : ""}
@@ -3333,18 +3343,17 @@
     const [units, [x]] = await Promise.all([api(`install_units?project_id=eq.${projectId}&active=eq.true&select=*&order=label`), cid ? api(`install_costs?id=eq.${cid}&select=*`) : [null]]);
     const cur = x || {}, multi = !!(cur.lines && cur.lines.length);
     sheet(`<h3>${cid ? "ویرایش هزینه" : "ثبت هزینه‌ی پروژه"}</h3>
-      <div class="card" style="background:var(--surface-2)"><div class="small"><b>خواندن خودکار فاکتور</b></div><div class="hint">عکس یا PDF فاکتور را انتخاب کنید و «خواندن خودکار» را بزنید؛ ردیف‌ها، فروشنده، تاریخ و شماره پر می‌شوند و شما بررسی و تأیید می‌کنید.</div>
-        <input type="file" data-f="file" accept="application/pdf,image/*"><div class="actions"><button type="button" class="btn secondary small" data-act="ocr">خواندن خودکار</button></div><div class="small muted" id="ocr-st"></div></div>
       <label>نوع هزینه</label><select data-f="category">${Object.entries(COST_CAT).map(([k, v]) => `<option value="${k}"${k === cur.category ? " selected" : ""}>${v}</option>`).join("")}</select>
       <label>شرح</label><input type="text" data-f="description" value="${esc(cur.description || "")}" placeholder="مثلاً: فاکتور خرید ریل و براکت">
       <div class="row"><div style="flex:1"><label>فروشنده / دریافت‌کننده</label><input type="text" data-f="payee" value="${esc(cur.payee || "")}"></div>
         <div style="flex:1"><label>شماره فاکتور</label><input type="text" class="ltr" data-f="invoice_no" value="${esc(cur.invoice_no || "")}"></div></div>
       <label>تاریخ</label>${datePickerHtml("cd", cur.spent_on || toEn(todayTehran()))}
       ${units.length > 1 ? `<label>دستگاه</label><select data-f="unit"><option value="">کل پروژه</option>${units.map((u) => `<option value="${u.id}"${u.id === cur.unit_id ? " selected" : ""}>${esc(unitName(u))}</option>`).join("")}</select>` : ""}
-      <label>نحوه‌ی ورود مبلغ</label><div class="seg" data-f="mode"><button type="button" data-u="one" class="${multi ? "" : "on"}">یک مبلغ</button><button type="button" data-u="multi" class="${multi ? "on" : ""}">فاکتور چندردیفی</button></div>
+      <label>نحوه‌ی ثبت فاکتور</label><div class="seg" data-f="mode"><button type="button" data-u="one" class="${multi ? "" : "on"}">ثبت یکجا (جمع فاکتور)</button><button type="button" data-u="multi" class="${multi ? "on" : ""}">ثبت ردیفی (اقلام فاکتور)</button></div>
       <div data-mode="one">${amountFieldHtml("cs", "مبلغ")}</div>
       <div data-mode="multi"><div id="cl-list">${(multi ? cur.lines : [{}]).map(costLineRow).join("")}</div>
         <div class="actions"><button type="button" class="btn secondary small" data-cl-add>+ ردیف</button></div><div class="hint" id="cl-total"></div></div>
+      <label>عکس یا PDF فاکتور (اختیاری)</label><input type="file" data-f="file" accept="application/pdf,image/*">
       ${cur.storage_path ? `<div class="small"><a href="#" data-open="${esc(cur.storage_path)}">فاکتور پیوست‌شده</a></div>` : ""}
       <div class="actions"><button class="btn" data-act="save">ثبت</button>${cid ? `<button class="btn secondary danger-text" data-act="off">حذف</button>` : ""}<button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
@@ -3362,23 +3371,6 @@
         if (e.target.closest("[data-cl-add]")) { list.insertAdjacentHTML("beforeend", costLineRow({}, list.children.length)); list.lastElementChild.querySelector('[data-c="item"]').focus(); }
         const d = e.target.closest("[data-cl-del]"); if (d && list.children.length > 1) { d.closest("[data-cl]").remove(); totals(); }
       });
-      el.querySelector('[data-act="ocr"]').addEventListener("click", (e) => guarded(e.target, async () => {
-        const f = el.querySelector('[data-f="file"]').files[0]; if (!f) throw new Error("اول عکس یا PDF فاکتور را انتخاب کنید");
-        if (f.size > 8 * 1024 * 1024) throw new Error("حجم فایل برای خواندن خودکار بیشتر از ۸ مگابایت است");
-        el.querySelector("#ocr-st").textContent = "در حال خواندن فاکتور…";
-        const b64 = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = () => no(new Error("فایل خوانده نشد")); r.readAsDataURL(f); });
-        const t = await token();
-        const res = await fetch(`${CFG.supabaseUrl}/functions/v1/read-invoice`, { method: "POST", headers: { apikey: CFG.supabaseKey, Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ media_type: f.type || "image/jpeg", data: b64 }) });
-        const r = await res.json().catch(() => ({}));
-        if (!res.ok || !r.lines) { el.querySelector("#ocr-st").textContent = ""; throw new Error(r.error || "فاکتور خوانده نشد"); }
-        if (r.vendor) el.querySelector('[data-f="payee"]').value = r.vendor;
-        if (r.invoice_no) el.querySelector('[data-f="invoice_no"]').value = r.invoice_no;
-        if (r.description && !el.querySelector('[data-f="description"]').value.trim()) el.querySelector('[data-f="description"]').value = r.description;
-        seg.querySelector('[data-u="multi"]').click();
-        list.innerHTML = (r.lines.length ? r.lines : [{}]).map(costLineRow).join(""); totals();
-        el.querySelector("#ocr-st").textContent = `${fa(r.lines.length)} ردیف خوانده شد${r.total_rial ? ` · جمع روی فاکتور ${num(Math.round(r.total_rial / 10))} تومان` : ""}${r.date ? ` · تاریخ فاکتور ${esc(fa(r.date))}` : ""}.${r.currency === "unknown" ? " واحد پول روی فاکتور مشخص نبود و اعداد ریال فرض شدند؛ اگر تومان است، فی‌ها را اصلاح کنید." : ""} همه را بررسی کنید و بعد «ثبت» بزنید.`;
-      }));
       const body = async (active) => { const u = el.querySelector('[data-f="unit"]'), f = el.querySelector('[data-f="file"]').files[0], ls = mode() === "multi" ? readCostLines(el) : [];
         return { project_id: projectId, unit_id: u && u.value ? Number(u.value) : null, category: el.querySelector('[data-f="category"]').value, description: el.querySelector('[data-f="description"]').value.trim(),
           payee: el.querySelector('[data-f="payee"]').value.trim(), invoice_no: el.querySelector('[data-f="invoice_no"]').value.trim(), spent_on: readDate(el, "cd"),
@@ -3396,20 +3388,34 @@
   // D-106: client receipts of an installation project (CEO only); project-file records, not the service ledger
   const RC_METHOD = { cash: "نقد", transfer: "واریز / کارت", cheque: "چک" };
   const RC_STATUS = { received: ["دریافت شد", "ok"], pending: ["چک در جریان", "warn"], cleared: ["چک وصول شد", "ok"], bounced: ["چک برگشتی", "danger"] };
+  const chequeDue = (r) => r.method === "cheque" && r.status === "pending" && r.cheque_due && r.cheque_due <= toEn(todayTehran());
   function receiptsHtml(p, k, rcs) {
     if (role() !== "CEO") return "";
+    const due = rcs.filter(chequeDue);
     const got = rcs.filter((r) => r.status === "received" || r.status === "cleared").reduce((a, r) => a + Number(r.amount_rial), 0);
     const pend = rcs.filter((r) => r.status === "pending").reduce((a, r) => a + Number(r.amount_rial), 0);
     const bounced = rcs.filter((r) => r.status === "bounced").reduce((a, r) => a + Number(r.amount_rial), 0);
     return `<div class="section-title"><h2>دریافتی‌های کارفرما</h2></div>
+      ${due.length ? `<div class="card" style="border-color:var(--warn)"><div class="small"><b>${fa(due.length)} چک سررسید شده و وصولش ثبت نشده</b> — اگر پاس شده، «پاس شد» را بزنید؛ اگر برگشت خورده، چک را باز کنید و وضعیتش را «برگشتی» بگذارید.</div></div>` : ""}
       <div class="card"><table class="list"><tr><td>وصول‌شده (نقد، واریز، چک وصول‌شده)</td><td><b>${money(got)}</b></td></tr>
         ${pend ? `<tr><td>چک‌های در جریان</td><td>${money(pend)}</td></tr>` : ""}${bounced ? `<tr><td class="debt">چک برگشتی</td><td class="debt">${money(bounced)}</td></tr>` : ""}
         ${k ? `<tr><td><b>مانده‌ی طلب از قرارداد</b><div class="small muted">مبلغ قرارداد منهای وصول‌شده</div></td><td><b class="${Number(k.amount_rial) - got > 0 ? "debt" : ""}">${money(Number(k.amount_rial) - got)}</b></td></tr>` : ""}</table></div>
-      ${rcs.map((r) => { const s = RC_STATUS[r.status] || [r.status, ""];
-        return `<div class="card tap" data-act="ip-rc" data-rid="${r.id}"><div class="item-head"><div><div class="item-title">${money(r.amount_rial)} · ${RC_METHOD[r.method]}</div>
-          <div class="small muted">${jdate(r.received_on)}${r.method === "cheque" ? ` · چک <bdi dir="ltr">${esc(fa(r.cheque_no || ""))}</bdi> سررسید ${jdate(r.cheque_due)}${r.bank ? ` · ${esc(r.bank)}` : ""}` : ""}${r.notes ? ` · ${esc(r.notes)}` : ""}</div></div>
-          <span class="badge ${s[1]}">${s[0]}</span></div></div>`; }).join("")}
+      ${rcs.map((r) => { const s = RC_STATUS[r.status] || [r.status, ""], od = chequeDue(r);
+        return `<div class="card tap" data-act="ip-rc" data-rid="${r.id}"${od ? ' style="border-color:var(--warn)"' : ""}><div class="item-head"><div><div class="item-title">${money(r.amount_rial)} · ${RC_METHOD[r.method]}</div>
+          <div class="small muted">${jdate(r.received_on)}${r.method === "cheque" ? ` · چک <bdi dir="ltr">${esc(fa(r.cheque_no || ""))}</bdi> سررسید ${jdate(r.cheque_due)}${r.bank ? ` · ${esc(r.bank)}` : ""}` : ""}${r.cleared_on ? ` · وصول ${jdate(r.cleared_on)}` : ""}${r.notes ? ` · ${esc(r.notes)}` : ""}</div></div>
+          <div style="text-align:left"><span class="badge ${od ? "warn" : s[1]}">${od ? "سررسید شده، وصول ثبت نشده" : s[0]}</span>${r.status === "pending" ? `<button class="btn small" data-act="ip-rc-clear" data-rid="${r.id}">پاس شد</button>` : ""}</div></div></div>`; }).join("")}
       <div class="page-actions"><button class="btn" data-act="ip-rc" data-id="${p.id}">+ ثبت دریافت</button></div>`;
+  }
+  async function sheetChequeCleared(rid) {
+    const [r] = await api(`install_receipts?id=eq.${rid}&select=*`);
+    if (!r) throw new Error("چک پیدا نشد");
+    sheet(`<h3>ثبت وصول چک</h3><div class="small">چک <bdi dir="ltr">${esc(fa(r.cheque_no || ""))}</bdi> · ${money(r.amount_rial)} · سررسید ${jdate(r.cheque_due)}</div>
+      <label>تاریخ وصول (پاس شدن)</label>${datePickerHtml("cl", toEn(todayTehran()))}
+      <div class="actions"><button class="btn" data-act="save">ثبت وصول</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+      await rpc("save_install_receipt", { p_id: rid, p: { project_id: r.project_id, method: r.method, amount_rial: r.amount_rial, received_on: r.received_on, cheque_no: r.cheque_no, cheque_due: r.cheque_due,
+        bank: r.bank, notes: r.notes, status: "cleared", cleared_on: readDate(el, "cl"), storage_path: null, active: true } });
+      close(); toast("وصول چک ثبت شد"); route(); })));
   }
   async function sheetInstallReceipt(projectId, rid) {
     const [x] = rid ? await api(`install_receipts?id=eq.${rid}&select=*`) : [null];
@@ -3434,7 +3440,7 @@
       el.addEventListener("click", (e) => { const a = e.target.closest("[data-open]"); if (a) { e.preventDefault(); openFile(a.dataset.open, "install-files"); } });
       const body = async (active) => { const m = seg.querySelector(".on").dataset.u, f = el.querySelector('[data-f="file"]').files[0];
         return { project_id: projectId, method: m, amount_rial: readAmount(el, "rc").rial, received_on: readDate(el, "rd"), cheque_no: m === "cheque" ? toEn(el.querySelector('[data-f="cheque_no"]').value.trim()) : null,
-          cheque_due: m === "cheque" ? readDate(el, "cd") : null, bank: m === "cheque" ? el.querySelector('[data-f="bank"]').value.trim() : null, status: m === "cheque" ? el.querySelector('[data-f="status"]').value : null,
+          cleared_on: cur.cleared_on || null, cheque_due: m === "cheque" ? readDate(el, "cd") : null, bank: m === "cheque" ? el.querySelector('[data-f="bank"]').value.trim() : null, status: m === "cheque" ? el.querySelector('[data-f="status"]').value : null,
           notes: el.querySelector('[data-f="notes"]').value.trim(), storage_path: f ? await uploadInstallFile(projectId, f) : null, active }; };
       el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
         if (!readAmount(el, "rc").rial) throw new Error("مبلغ را وارد کنید");
@@ -3843,6 +3849,7 @@
     const pid = Number((location.hash.match(/^#\/install\/(\d+)/) || [])[1]);
     if (act === "ip-units") sheetInstallUnits(id).catch((er) => toast(er.message));
     if (act === "ip-st") sheetInstallStage(Number(el.dataset.p) || pid, Number(el.dataset.u), el.dataset.c).catch((er) => toast(er.message));
+    if (act === "ip-rc-clear") sheetChequeCleared(Number(el.dataset.rid)).catch((er) => toast(er.message));
     if (act === "ip-rc") sheetInstallReceipt(pid, el.dataset.rid ? Number(el.dataset.rid) : null).catch((er) => toast(er.message));
     if (act === "if-final") guarded(el, () => finalizeInstallForm(Number(el.dataset.u), el.dataset.c));
     if (act === "if-print") printInstallForm(Number(el.dataset.u), el.dataset.c).catch((er) => toast(er.message));

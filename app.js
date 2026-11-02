@@ -516,14 +516,18 @@
       <div class="item-head"><div><div class="item-title">${esc(f.buildings ? f.buildings.name : "")}</div>
       <div class="small muted">${txt(f.fault_description || "")}</div></div>
       <div style="text-align:left">${badge(PRIORITY, f.priority)}<div style="height:4px"></div>${badge(FAULT_STATUS, f.status)}${f.needs_text ? `<div style="height:4px"></div><span class="badge warn">اعلام نیاز</span>` : ""}</div></div>
-      <div class="small muted">${f.subscription_code ? "کد " + esc(fa(f.subscription_code)) + " · " : ""}${f.fault_number ? "شماره " + esc(fa(f.fault_number)) + " · " : ""}${jtime(f.reported_at)}</div></div>`;
+      <div class="small muted">${f.subscription_code ? "کد " + esc(fa(f.subscription_code)) + " · " : ""}${f.fault_number ? "شماره " + esc(fa(f.fault_number)) + " · " : ""}اعلام ${jtime(f.reported_at)}</div>
+      ${f.repaired_at ? `<div class="small">رفع ${jtime(f.repaired_at)}${f.technicians ? " · " + esc(f.technicians.name) : ""} · ${durFa((new Date(f.repaired_at) - new Date(f.reported_at)) / 60000)} پس از اعلام</div>` : ""}
+      ${f.repair_description ? `<div class="small muted">${txt(f.repair_description)}</div>` : ""}</div>`;
   }
 
   let faultFilter = "open";
   async function viewFaults() {
-    const filters = { open: "&status=in.(reported,assigned,in_progress)", emergency: "&priority=eq.emergency&status=in.(reported,assigned,in_progress)", all: "" };
-    const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,subscription_code,needs_text,buildings(name)&order=reported_at.desc&limit=100${filters[faultFilter]}`);
-    const chips = [["open", "باز"], ["emergency", "اضطراری"], ["all", "همه"]];
+    const filters = { open: "&status=in.(reported,assigned,in_progress)", emergency: "&priority=eq.emergency&status=in.(reported,assigned,in_progress)",
+      done: "&status=in.(repaired,closed)", all: "" };
+    const order = faultFilter === "done" ? "repaired_at.desc.nullslast,reported_at.desc" : "reported_at.desc";
+    const list = await api(`faults?select=id,fault_number,fault_description,priority,status,reported_at,repaired_at,repair_description,subscription_code,needs_text,buildings(name),technicians(name)&order=${order}&limit=${faultFilter === "open" || faultFilter === "emergency" ? 100 : 300}${filters[faultFilter]}`);
+    const chips = [["open", "باز"], ["emergency", "اضطراری"], ["done", "رفع‌شده"], ["all", "همه"]];
     return shell(role() === "TECHNICIAN" ? "کارهای من" : "خرابی‌ها", "faults", `
       ${can.reportFault() ? `<div class="page-actions"><button class="btn" data-act="new-fault">+ ثبت خرابی</button></div>` : ""}
       <div class="chips">${chips.map(([k, l]) => `<button data-act="fault-filter" data-k="${k}" class="${faultFilter === k ? "on" : ""}">${l}</button>`).join("")}</div>
@@ -664,6 +668,7 @@
       isStaff() ? api(`contract_change_requests?contract_id=eq.${id}&select=id,kind,payload,status,document_number,requested_at,decided_at,decision_note&order=id.desc`) : Promise.resolve([]),
       api(`contract_terms?contract_id=eq.${id}&select=effective_ym,monthly_amount_rial,missed_service_deduction_rial,services_per_month,source&order=effective_ym`),
       api(`documents?contract_id=eq.${id}&storage_path=not.is.null&select=id,document_type,file_name,storage_path,uploaded_at,notes,change_request_id&order=uploaded_at.desc`)]);
+    const faultsHist = isStaff() ? await api(`faults?contract_id=eq.${id}&select=id,fault_number,fault_description,priority,status,reported_at,repaired_at,repair_description,subscription_code,needs_text,buildings(name),technicians(name)&order=reported_at.desc&limit=30`).catch(() => []) : [];
     if (!c) return shell("قرارداد", "contracts", `<div class="card empty">پیدا نشد یا دسترسی ندارید</div>`);
     // drafts (opening balances waiting for approval) are shown to the CEO only
     const invoices = allInvoices.filter((i) => i.status !== "draft" || role() === "CEO");
@@ -727,6 +732,8 @@
       ${terms.length > 1 ? `<div class="section-title"><h2>شرایط مالی به ترتیب زمان</h2></div><div class="card"><table class="list"><tbody>${terms.map((t) => `<tr><td>از ${MONTHS[t.effective_ym % 100 - 1]} ${fa(Math.floor(t.effective_ym / 100))}<div class="small muted">${t.source === "amendment" ? "الحاقیه" : "قرارداد"}</div></td>
         <td style="text-align:left">${num(Math.round(t.monthly_amount_rial / 10))} تومان<div class="small muted">کسر ${num(Math.round(t.missed_service_deduction_rial / 10))} · ${fa(t.services_per_month)} سرویس</div></td></tr>`).join("")}</tbody></table></div>` : ""}
 
+      ${isStaff() ? `<div class="section-title"><h2>سابقه‌ی خرابی‌ها</h2><span class="small muted">${fa(faultsHist.length)} مورد${faultsHist.length === 30 ? " (۳۰ مورد آخر)" : ""}</span></div>
+        ${faultsHist.length ? faultsHist.map(faultCard).join("") : `<div class="card empty">خرابی‌ای برای این قرارداد ثبت نشده</div>`}` : ""}
       <div class="section-title"><h2>اسناد</h2><span class="small muted">${fa(open.length)} باز</span></div>
       ${invoices.length ? invoices.map((i) => `<div class="card"><div class="item-head"><div><div class="item-title">${i.document_number ? `<bdi dir="ltr">${esc(fa(i.document_number))}</bdi>` : `<span class="muted">بدون شماره</span>`}</div>
         <div class="small muted">${DOC_TYPE[i.document_type] || i.document_type} · ${jdate(i.issue_date)}</div></div>

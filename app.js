@@ -2940,12 +2940,12 @@
 
   async function viewInstall() {
     const [ps, qs] = await Promise.all([api("install_projects?select=*&order=id.desc"), api("install_quotes?select=id,project_id,version,status,document_number,valid_until,options&order=version.desc")]);
-    const latest = new Map(); qs.forEach((q) => { if (!latest.has(q.project_id) && q.status !== "draft") latest.set(q.project_id, q); });
+    const latest = new Map(), drafts = new Set(); qs.forEach((q) => { if (q.status === "draft") drafts.add(q.project_id); else if (!latest.has(q.project_id)) latest.set(q.project_id, q); });
     const card = (p) => { const q = latest.get(p.id), st = IP_STAGE[p.stage] || [p.stage, ""];
       const prices = q ? (q.options || []).map((o) => Number(o.total_rial || o.amount_rial)) : [];
       return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div>
         <div class="small muted">${esc(p.client_name)} · ${esc(p.city || "")}${q ? ` · پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number || ""))}</bdi>` : ""}</div></div>
-        <div style="text-align:left">${prices.length ? money(Math.min(...prices)) : ""}<span class="badge ${st[1]}">${st[0]}</span></div></div></div>`; };
+        <div style="text-align:left">${prices.length ? money(Math.min(...prices)) : ""}<span class="badge ${st[1]}">${st[0]}</span>${drafts.has(p.id) ? `<span class="badge warn">پیش‌نویس باز</span>` : ""}</div></div></div>`; };
     return shell("پروژه‌های نصب", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
       <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
       <div class="hint">فقط مدیرعامل این بخش را می‌بیند. هر پروژه پرونده‌ی خودش را دارد؛ مرحله‌ی اول برآورد و پیشنهاد قیمت است و مراحل بعدی نصب بعداً به همین پرونده وصل می‌شوند.</div>
@@ -3014,7 +3014,8 @@
     const opts = (q.options || []).length ? q.options : [{ label: "", amount_rial: null }];
     return shell(`پیشنهاد قیمت — پیش‌نویس`, "more", `<a href="#/install/${p.id}" data-act="back" class="small">→ بازگشت</a>
       <div id="iq-form" data-id="${id}">
-      <div class="card"><div class="item-title">${esc(p.title)} · نسخه ${fa(q.version)}</div><div class="hint">پیش‌نویس فقط برای شماست؛ با «صدور» شماره (کد ۱۰) و لینک می‌گیرد و دیگر ویرایش نمی‌شود.</div>
+      <div class="card"><div class="item-title">${esc(p.title)} · نسخه ${fa(q.version)}</div><div class="hint">پیش‌نویس فقط برای شماست و هر تغییر چند ثانیه بعد خودکار ذخیره می‌شود؛ با «صدور» شماره (کد ۱۰) و لینک می‌گیرد و دیگر ویرایش نمی‌شود.</div>
+        <div class="small muted" id="iq-saved">همه‌ی تغییرها ذخیره شده است</div>
         <label>گیرنده</label><input type="text" data-q="recipient" value="${esc(q.recipient || "")}"></div>
       <div class="card"><div class="item-title">مشخصات دستگاه</div>
         <div class="row"><div style="flex:1"><label>نوع</label>${sel("drive", IQ_SPEC.drive, sp.drive)}</div><div style="flex:1"><label>موتورخانه</label>${sel("room", IQ_SPEC.room, sp.room)}</div></div>
@@ -3023,8 +3024,10 @@
         <div class="row"><div style="flex:1"><label>ظرفیت از (نفر)</label>${numIn("persons_from", sp.persons_from, "۸")}</div><div style="flex:1"><label>تا (نفر)</label>${numIn("persons_to", sp.persons_to, "۱۰")}</div></div>
         <div class="row"><div style="flex:1"><label>از (کیلوگرم)</label>${numIn("kg_from", sp.kg_from, "۶۰۰")}</div><div style="flex:1"><label>تا (کیلوگرم)</label>${numIn("kg_to", sp.kg_to, "۷۵۰")}</div></div>
         <div class="row"><div style="flex:1"><label>سرعت نامی (متر بر ثانیه)</label>${sel("speed", ["", ...IQ_SPEC.speed], sp.speed)}</div><div style="flex:1"><label>تعلیق</label>${sel("susp", IQ_SPEC.susp, sp.susp)}</div></div>
-        <label>متن مشخصات کلی (از روی مشخصات ساخته می‌شود؛ قابل ویرایش)</label><textarea data-q="intro" rows="5">${esc(q.intro || iqIntro(sp, p))}</textarea>
+        <label>متن مشخصات کلی (از روی مشخصات ساخته می‌شود؛ قابل ویرایش)</label><textarea data-q="intro" rows="5" data-custom="${sp.intro_custom ? 1 : ""}">${esc(sp.intro_custom && q.intro ? q.intro : iqIntro(sp, p))}</textarea>
+        <div class="hint" id="iq-intro-hint">${sp.intro_custom ? "متن را دستی تغییر داده‌اید؛ با تغییر مشخصات به‌روز نمی‌شود. برای ساخت دوباره از مشخصات، دکمه‌ی زیر را بزنید." : "این متن با هر تغییر مشخصات خودکار به‌روز می‌شود."}</div>
         <div class="actions"><button class="btn secondary small" data-act="iq-intro">ساخت دوباره از مشخصات</button></div></div>
+        <input type="hidden" id="iq-proj" value="${esc(JSON.stringify({ title: p.title || "", city: p.city || "" }))}">
       <div class="card"><div class="item-title">مشخصات فنی</div><div class="hint">هر بند در یک خط.</div>
         <textarea data-q="tech_items" rows="12">${esc((q.tech_items || []).join("\n"))}</textarea>
         <div class="actions"><button class="btn secondary small" data-act="iq-def" data-k="tech_items">ذخیره به‌عنوان پیش‌فرض</button></div></div>
@@ -3054,16 +3057,41 @@
     const bindRow = (row) => { const i = row.dataset.opt; bindAmount(row, `iqo${i}`); const init = row.querySelector('[data-o="init"]').value;
       if (init) { const inp = row.querySelector(`[data-amount="iqo${i}"]`); inp.value = String(Math.round(Number(init) / 10)); inp.dispatchEvent(new Event("input")); } };
     f.querySelectorAll("[data-opt]").forEach(bindRow);
+    const introEl = f.querySelector('[data-q="intro"]'), proj = JSON.parse(document.getElementById("iq-proj").value || "{}");
+    const syncIntro = () => { if (!introEl.dataset.custom) introEl.value = iqIntro(readIqForm(f).spec, proj); };
+    f.querySelectorAll("[data-s]").forEach((i) => { i.addEventListener("input", syncIntro); i.addEventListener("change", syncIntro); });
+    introEl.addEventListener("input", () => { if (!introEl.dataset.custom) { introEl.dataset.custom = "1"; const h = document.getElementById("iq-intro-hint"); if (h) h.textContent = "متن را دستی تغییر داده‌اید؛ با تغییر مشخصات به‌روز نمی‌شود. برای ساخت دوباره از مشخصات، دکمه‌ی زیر را بزنید."; } });
+    f.__regenIntro = () => { delete introEl.dataset.custom; syncIntro(); const h = document.getElementById("iq-intro-hint"); if (h) h.textContent = "این متن با هر تغییر مشخصات خودکار به‌روز می‌شود."; f.dispatchEvent(new Event("change")); };
     const sum = () => { const d = readIqForm(f), box = document.getElementById("iq-sum");
       box.innerHTML = d.options.length ? d.options.map((o) => { const v = d.vat_exempt ? 0 : Math.round(o.amount_rial * VAT_RATE / 100);
         return `<div class="row"><span class="spacer">${esc(o.label || "بدون شرح")}</span><b>${money(o.amount_rial + v)}</b></div>`; }).join("") + `<div class="small muted">مبلغ نهایی هر گزینه ${d.vat_exempt ? "(معاف از ارزش افزوده)" : `با ${fa(VAT_RATE)}٪ ارزش افزوده`}</div>` : `<div class="small muted">مبلغی وارد نشده</div>`; };
     f.addEventListener("input", sum); f.addEventListener("change", sum); f.addEventListener("click", (e) => setTimeout(sum, 0)); sum();
+    // autosave (D-103): a few seconds after the last change, and at once when leaving the page
+    const ind = document.getElementById("iq-saved"), id = Number(f.dataset.id);
+    let timer = null, dirty = false, saving = null, last = JSON.stringify(readIqForm(f));
+    const save = async () => {
+      clearTimeout(timer); timer = null;
+      if (f.dataset.locked || !document.body.contains(f) && !dirty) return;
+      const d = readIqForm(f), j = JSON.stringify(d);
+      if (j === last) { dirty = false; if (ind) ind.textContent = "همه‌ی تغییرها ذخیره شده است"; return; }
+      if (ind) ind.textContent = "در حال ذخیره…";
+      try { saving = rpc("save_install_quote", { p_id: id, p: d }); await saving; last = j; dirty = false;
+        if (ind) ind.textContent = `ذخیره شد ${new Intl.DateTimeFormat("fa-IR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tehran" }).format(new Date())}`;
+      } catch (er) { if (ind) ind.textContent = "ذخیره نشد: " + er.message; } finally { saving = null; }
+    };
+    const touch = () => { if (f.dataset.locked) return; dirty = true; if (ind) ind.textContent = "تغییرهای ذخیره‌نشده…"; clearTimeout(timer); timer = setTimeout(save, 2500); };
+    f.addEventListener("input", touch); f.addEventListener("change", touch);
+    f.addEventListener("click", (e) => { if (e.target.closest('[data-act="iq-opt-add"], [data-act="iq-opt-del"], .seg button')) touch(); });
+    const leave = () => { if (dirty && !f.dataset.locked) save(); window.removeEventListener("hashchange", leave); window.removeEventListener("pagehide", leave); document.removeEventListener("visibilitychange", hide); };
+    const hide = () => { if (document.visibilityState === "hidden" && dirty) save(); };
+    window.addEventListener("hashchange", leave); window.addEventListener("pagehide", leave); document.addEventListener("visibilitychange", hide);
+    f.__flush = async () => { if (saving) await saving.catch(() => {}); };
     f.__addRow = () => { const box = document.getElementById("iq-opts"), i = Math.max(-1, ...[...box.querySelectorAll("[data-opt]")].map((r) => Number(r.dataset.opt))) + 1;
       box.insertAdjacentHTML("beforeend", iqOptRow(i, {})); bindRow(box.lastElementChild); };
   }
   function readIqForm(f) {
     const v = (k) => f.querySelector(`[data-q="${k}"]`);
-    const spec = {}; f.querySelectorAll("[data-s]").forEach((i) => { const raw = toEn(i.value.trim()); spec[i.dataset.s] = ["stops", "units", "persons_from", "persons_to", "kg_from", "kg_to", "doors"].includes(i.dataset.s) ? (raw ? Number(raw.replace(/[^\d]/g, "")) || null : null) : raw; });
+    const spec = {}; if (v("intro").dataset.custom) spec.intro_custom = true; f.querySelectorAll("[data-s]").forEach((i) => { const raw = toEn(i.value.trim()); spec[i.dataset.s] = ["stops", "units", "persons_from", "persons_to", "kg_from", "kg_to", "doors"].includes(i.dataset.s) ? (raw ? Number(raw.replace(/[^\d]/g, "")) || null : null) : raw; });
     const options = [...f.querySelectorAll("[data-opt]")].map((r) => ({ label: r.querySelector('[data-o="label"]').value.trim(), amount_rial: readAmount(r, `iqo${r.dataset.opt}`).rial || 0 }))
       .filter((o) => o.label || o.amount_rial);
     return { recipient: v("recipient").value.trim(), spec, intro: v("intro").value.trim(), tech_items: lines(v("tech_items").value), price_intro: v("price_intro").value.trim(),
@@ -3071,17 +3099,30 @@
       valid_hours: Number(toEn(v("valid_hours").value).replace(/[^\d]/g, "")) || 24 };
   }
   function renderInstallQuotePages(host, q, company, draft) {
-    const p = q.project || q.install_projects || {}, s = IQ_STATE(q);
-    const head = `<div class="pp-title"><h1>پیشنهاد قیمت آسانسور<small>${esc(p.title || "")} · نسخه ${fa(q.version || 1)}${q.issued_at ? ` · صدور ${jtime(q.issued_at)} · اعتبار ${fa(q.valid_hours)} ساعت تا ${jtime(q.valid_until)}` : ""}</small></h1>${draft ? "" : `<span class="pp-chip y">${esc(s[0])}</span>`}</div><div class="pp-rule"></div>`;
+    const p = q.project || q.install_projects || {}, s = IQ_STATE(q), sp = q.spec || {};
     const opts = (q.options || []).map((o) => { const v = o.vat_rial ?? (q.vat_exempt ? 0 : Math.round(Number(o.amount_rial) * VAT_RATE / 100)), t = o.total_rial ?? Number(o.amount_rial) + v; return { ...o, v, t }; });
-    const rows = opts.map((o, k) => `<tr><td class="c">${fa(k + 1)}</td><td>${esc(o.label)}<div class="pp-sub" style="text-align:right">به حروف: ${numWords(o.t)} ریال</div></td><td class="n">${num(o.amount_rial)}</td><td class="n">${q.vat_exempt ? "معاف" : num(o.v)}</td><td class="n"><b>${num(o.t)}</b></td></tr>`).join("");
-    const blocks = [`<p style="margin:0 0 2mm"><b>${esc(q.recipient || "")}</b></p><p style="margin:0 0 3mm;text-align:justify">${esc(fa(q.intro || ""))}</p><h3 style="margin:0 0 1.5mm;font-size:10pt;color:var(--g)">مشخصات فنی</h3>`,
-      ...(q.tech_items || []).map((t, i) => `<div style="display:flex;gap:2mm;margin:0 0 .8mm;text-align:justify"><span style="color:var(--g);font-weight:800">${fa(i + 1)}.</span><span>${esc(fa(t))}</span></div>`),
-      `<h3 style="margin:3mm 0 1.5mm;font-size:10pt;color:var(--g)">پیشنهاد قیمت</h3><p style="margin:0 0 2mm;text-align:justify">${esc(fa(q.price_intro || ""))}</p>` +
-        tbl([["ردیف", "9mm"], ["ترکیب"], ["مبلغ (ریال)", "30mm"], [`ارزش افزوده${q.vat_exempt ? "" : ` ${fa(Number(q.vat_rate || VAT_RATE))}٪`}`, "26mm"], ["مبلغ کل (ریال)", "32mm"]], rows),
-      ...((q.notes_items || []).length ? [`<div class="pp-words">${q.notes_items.map((n) => `<div>* ${esc(fa(n))}</div>`).join("")}</div>`] : []),
-      `<div class="pp-box y"><h3>شرایط</h3>${(q.conditions || []).map((c, i) => `<div>${fa(i + 1)}. ${esc(fa(c))}</div>`).join("")}<div>${fa((q.conditions || []).length + 1)}. اعتبار قیمت اعلام‌شده تا ${fa(q.valid_hours || 24)} ساعت پس از تاریخ صدور${q.valid_until ? ` (${jtime(q.valid_until)})` : ""} می‌باشد.</div></div>`,
-      `<div style="text-align:left;margin-top:4mm;font-weight:800">با تقدیم احترام<br>آسانسور پایاکو</div>`];
+    const head = `<div class="iq-hero"><div class="iq-hero-t"><span class="iq-kicker">پیشنهاد قیمت</span><h1>آسانسور ${esc(sp.usage || "مسافربر")}${p.title ? ` · ${esc(p.title)}` : ""}</h1>
+        <div class="iq-hero-s">${esc(p.city || "اهواز")} · نسخه ${fa(q.version || 1)}${q.issued_at ? ` · صدور ${jtime(q.issued_at)}` : ""}</div></div>
+        <div class="iq-valid"><b>${fa(q.valid_hours || 24)}</b><span>ساعت اعتبار</span>${q.valid_until ? `<em>تا ${jtime(q.valid_until)}</em>` : ""}${draft ? "" : `<i>${esc(s[0])}</i>`}</div></div>`;
+    const tile = (label, value, unit) => value ? `<div class="iq-tile"><span>${label}</span><b>${value}</b>${unit ? `<em>${unit}</em>` : ""}</div>` : "";
+    const tiles = [tile("نوع آسانسور", esc([sp.drive, sp.room].filter(Boolean).join(" · "))), tile("ظرفیت", sp.persons_from ? rangeTxt(sp.persons_from, sp.persons_to) : "", sp.kg_from ? `نفر · ${rangeTxt(sp.kg_from, sp.kg_to)} کیلوگرم` : "نفر"),
+      tile("تعداد توقف", sp.stops ? fa(sp.stops) : "", "توقف"), tile("سرعت نامی", sp.speed ? fa(String(sp.speed).replace(".", "٫")) : "", "متر بر ثانیه"),
+      tile("درب", DOOR_TXT[Number(sp.doors)] || "", ""), tile("سیستم تعلیق", sp.susp && sp.drive !== "هیدرولیک" ? fa(sp.susp) : "", ""), tile("تعداد دستگاه", fa(sp.units || 1), "دستگاه")].join("");
+    const tech = (q.tech_items || []).map((t, i) => `<div class="iq-li"><span class="iq-n">${fa(i + 1)}</span><span>${esc(fa(t))}</span></div>`);
+    const techBlocks = []; for (let i = 0; i < tech.length; i += 4) techBlocks.push(`<div class="iq-grid2">${tech.slice(i, i + 4).join("")}</div>`);
+    const best = opts.length > 1 ? opts.reduce((a, o) => (o.t < a.t ? o : a), opts[0]) : null;
+    const cards = opts.map((o, k) => `<div class="iq-opt${best === o ? " best" : ""}"><div class="iq-opt-h"><span class="iq-n">${fa(k + 1)}</span><b>${esc(o.label)}</b>${best === o ? `<i>اقتصادی‌ترین</i>` : ""}</div>
+        <div class="iq-amt">${num(o.t)}<small>ریال</small></div><div class="iq-words">${numWords(o.t)} ریال</div>
+        <div class="iq-break">${num(o.amount_rial)} ریال ${q.vat_exempt ? "· معاف از ارزش افزوده" : `+ ${fa(Number(q.vat_rate || VAT_RATE))}٪ ارزش افزوده (${num(o.v)} ریال)`}</div></div>`);
+    const optBlocks = []; for (let i = 0; i < cards.length; i += 2) optBlocks.push(`<div class="iq-opts">${cards.slice(i, i + 2).join("")}</div>`);
+    const blocks = [
+      `<div class="iq-to">${esc(q.recipient || "")}</div><p class="iq-lead">${esc(fa(q.intro || ""))}</p>`,
+      tiles ? `<div class="iq-sec">مشخصات دستگاه</div><div class="iq-tiles">${tiles}</div>` : "",
+      `<div class="iq-sec">مشخصات فنی و برند تجهیزات</div>${techBlocks[0] || ""}`, ...techBlocks.slice(1),
+      `<div class="iq-sec">پیشنهاد قیمت</div><p class="iq-p">${esc(fa(q.price_intro || ""))}</p>${optBlocks[0] || ""}`, ...optBlocks.slice(1),
+      ...((q.notes_items || []).length ? [`<div class="iq-note">${q.notes_items.map((n) => `<div>${esc(fa(n))}</div>`).join("")}</div>`] : []),
+      `<div class="pp-box y iq-cond"><h3>شرایط</h3>${(q.conditions || []).map((c, i) => `<div>${fa(i + 1)}. ${esc(fa(c))}</div>`).join("")}<div>${fa((q.conditions || []).length + 1)}. اعتبار قیمت اعلام‌شده تا ${fa(q.valid_hours || 24)} ساعت پس از تاریخ صدور${q.valid_until ? ` (${jtime(q.valid_until)})` : ""} می‌باشد.</div></div>`,
+      `<div class="iq-sign"><span>با تقدیم احترام</span><b>آسانسور پایاکو</b><em>با شما تا اوج...</em></div>`].filter(Boolean);
     paginate(host, { no: q.document_number || q.number || "—", date: q.issued_at ? jdateTz(q.issued_at) : jdate(todayTehran()), form: "PY-FO-PC-G10", rev: 0, issued: "۱۴۰۵/۰۸/۱۱" }, company || q.company || {}, head, blocks, { draft });
   }
   async function printInstallQuote(id, draftData) {
@@ -3137,18 +3178,19 @@
     if (act === "ip-stage") rpc("set_install_project_stage", { p_id: id, p_stage: document.querySelector('[data-f="stage"]').value }).then(() => { toast("مرحله ثبت شد"); route(); }).catch((er) => toast(er.message));
     if (act === "iq-new") newInstallQuote(id).catch((er) => toast(er.message));
     const f = document.getElementById("iq-form");
-    if (act === "iq-intro" && f) api(`install_quotes?id=eq.${f.dataset.id}&select=install_projects(*)`).then(([r]) => { f.querySelector('[data-q="intro"]').value = iqIntro(readIqForm(f).spec, r.install_projects || {}); toast("متن از روی مشخصات ساخته شد"); }).catch((er) => toast(er.message));
+    if (act === "iq-intro" && f) { f.__regenIntro(); toast("متن از روی مشخصات ساخته شد"); }
     if (act === "iq-opt-add" && f) f.__addRow();
     if (act === "iq-opt-del") { const r = el.closest("[data-opt]"); if (r && document.querySelectorAll("#iq-opts [data-opt]").length > 1) r.remove(); else if (r) { r.querySelector('[data-o="label"]').value = ""; const i = r.querySelector("[data-amount]"); i.value = ""; i.dispatchEvent(new Event("input")); } }
     if (act === "iq-def" && f) { const k = el.dataset.k; if (confirm("این متن پیش‌فرض پیشنهادهای بعدی شود؟")) rpc("set_install_defaults", { p: { [k]: readIqForm(f)[k] } }).then(() => toast("پیش‌فرض ذخیره شد")).catch((er) => toast(er.message)); }
-    if (act === "iq-save" && f) guarded(el, async () => { await rpc("save_install_quote", { p_id: id, p: readIqForm(f) }); toast("پیش‌نویس ذخیره شد"); });
+    if (act === "iq-save" && f) guarded(el, async () => { await rpc("save_install_quote", { p_id: id, p: readIqForm(f) }); f.dispatchEvent(new Event("change")); toast("پیش‌نویس ذخیره شد"); });
     if (act === "iq-preview" && f) printInstallQuote(id, readIqForm(f)).catch((er) => toast(er.message));
     if (act === "iq-issue" && f) guarded(el, async () => {
       const d = readIqForm(f);
       if (!d.options.length) throw new Error("حداقل یک مبلغ پیشنهادی وارد کنید");
       if (d.options.some((o) => !o.label || !o.amount_rial)) throw new Error("هر گزینه‌ی قیمت باید شرح و مبلغ داشته باشد");
       if (!confirm(`پیشنهاد صادر شود؟ شماره (کد ۱۰) و لینک می‌گیرد، اعتبارش ${fa(d.valid_hours)} ساعت از همین حالا شروع می‌شود و دیگر ویرایش نمی‌شود.`)) return;
-      await rpc("save_install_quote", { p_id: id, p: d });
+      f.dataset.locked = "1"; if (f.__flush) await f.__flush();
+      try { await rpc("save_install_quote", { p_id: id, p: d }); } catch (er) { delete f.dataset.locked; throw er; }
       const r = await rpc("issue_install_quote", { p_id: id });
       toast("پیشنهاد قیمت صادر شد"); route();
     });
@@ -3159,7 +3201,7 @@
       if (navigator.share) navigator.share({ title: text, text, url }).catch(() => {}); else copyText(url);
     }
     if (act === "iq-copy") rpc("copy_install_quote", { p_id: id }).then((nid) => { toast("نسخه‌ی جدید (پیش‌نویس) ساخته شد"); location.hash = `#/iq/${nid}`; }).catch((er) => toast(er.message));
-    if (act === "iq-cancel") { const note = prompt(f ? "پیش‌نویس حذف (لغو) شود؟ دلیل (اختیاری):" : "دلیل لغو پیشنهاد:"); if (note !== null) rpc("cancel_install_quote", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
+    if (act === "iq-cancel") { const note = prompt(f ? "پیش‌نویس حذف (لغو) شود؟ دلیل (اختیاری):" : "دلیل لغو پیشنهاد:"); if (note !== null && f) f.dataset.locked = "1"; if (note !== null) rpc("cancel_install_quote", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
   }
 
   /* print renderers on the letterhead: G04 statement, G06 repair invoice, G07 proforma */

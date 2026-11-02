@@ -3083,7 +3083,8 @@
     const qcard = (q) => { const s = IQ_STATE(q, p.stage);
       return `<div class="card tap" data-act="go" data-href="#/iq/${q.id}"><div class="item-head"><div><div class="item-title">${q.document_number ? `پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number))}</bdi>` : "پیش‌نویس پیشنهاد"} · نسخه ${fa(q.version)}</div>
         <div class="small muted">${q.issued_at ? `صدور ${jtime(q.issued_at)} · اعتبار تا ${jtime(q.valid_until)}` : `آخرین تغییر ${jtime(q.updated_at)}`}</div>
-        ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div><span class="badge ${s[1]}">${s[0]}</span></div></div>`; };
+        ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div>
+        <div style="text-align:left"><span class="badge ${s[1]}">${s[0]}</span>${ceo && q.status === "issued" && ["estimate", "quoted"].includes(p.stage) ? `<button class="btn small" data-act="iq-extend" data-id="${q.id}" data-h="${q.valid_hours || 24}">تمدید اعتبار</button>` : ""}</div></div></div>`; };
     const won = p.stage === "won" || !!k, closed = ["lost", "cancelled"].includes(p.stage);
     const headCard = `<div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}${p.install_code ? ` <span class="badge ok">کد نصب ${fa(p.install_code)}</span>` : ""}</div>
         ${(cts.length ? cts : [{ name: p.client_name, mobile: p.client_mobile, role: "کارفرما" }]).map((c) => `<div class="small">${esc(c.name)}${c.role ? ` <span class="muted">(${esc(c.role)})</span>` : ""}${c.mobile ? ` · <a href="tel:${esc(c.mobile)}" class="ltr">${esc(fa(c.mobile))}</a>` : ""}</div>`).join("")}

@@ -447,6 +447,7 @@
     if (can.changeContract()) quick.push(`<button class="btn secondary" data-act="new-contract">+ قرارداد جدید</button>`);
     if (canDocs()) quick.push(`<button class="btn secondary" data-act="new-proforma">+ پیش‌فاکتور</button>`, `<button class="btn secondary" data-act="new-invoice">+ فاکتور</button>`);
     if (isStaff()) quick.push(`<button class="btn secondary" data-act="go" data-href="#/docs">اسناد</button>`);
+    if (role() === "CEO") quick.push(`<button class="btn secondary" data-act="go" data-href="#/install">پروژه‌های نصب</button>`);
     const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "Asia/Tehran" }).format(new Date()));
     const focus = d.emergency_faults ? [d.emergency_faults, "خرابی اضطراری"] : d.pending_services ? [d.pending_services, "سرویس منتظر تأیید"] : [d.open_faults || 0, "خرابی باز"];
     const greet = hour < 12 ? "صبح بخیر" : hour < 17 ? "روز بخیر" : "عصر بخیر";
@@ -775,6 +776,8 @@
         <div class="small muted">پیگیری وصول مطالبات</div></div><span>←</span></div></div>` : ""}
       ${can.changeContract() ? `<div class="card tap" data-act="go" data-href="#/renewals"><div class="item-head"><div><div class="item-title">تمدید قراردادها</div>
         <div class="small muted">قراردادهای رو به پایان این ماه و ماه بعد</div></div><span>←</span></div></div>` : ""}
+      ${role() === "CEO" ? `<div class="card tap" data-act="go" data-href="#/install"><div class="item-head"><div><div class="item-title">پروژه‌های نصب</div>
+        <div class="small muted">برآورد و پیشنهاد قیمت نصب آسانسور (فقط مدیرعامل)</div></div><span>←</span></div></div>` : ""}
       ${role() === "CEO" ? `<div class="card tap" data-act="go-reports"><div class="item-head"><div><div class="item-title">گزارش‌های مالی</div>
         <div class="small muted">تراز بازه‌ای، بدهکاران، دریافت‌ها — با خروجی اکسل</div></div><span>←</span></div></div>` : ""}
       ${["CEO", "EMPLOYEE"].includes(role()) ? `<div class="card tap" data-act="go-close"><div class="item-head"><div><div class="item-title">بستن ماه</div>
@@ -2474,7 +2477,7 @@
 
   async function viewCompany() {
     const c = await rpc("get_company_profile");
-    const st = await api("app_settings?key=in.(sms.mode,sms.test_mobile,sms.template_id,sms.tpl_plan,sms.tpl_fault,sms.tpl_proforma,sms.tpl_service,sms.tpl_renewal,sms.tpl_insurance,sms.debt_day)&select=key,value");
+    const st = await api("app_settings?key=in.(sms.mode,sms.test_mobile,sms.template_id,sms.tpl_plan,sms.tpl_fault,sms.tpl_proforma,sms.tpl_service,sms.tpl_renewal,sms.tpl_insurance,sms.tpl_install,sms.debt_day)&select=key,value");
     const sv = (k) => (st.find((x) => x.key === k) || {}).value || "";
     const tplId = (st.find((x) => x.key === "sms.template_id") || {}).value || "";
     const tplPlan = (st.find((x) => x.key === "sms.tpl_plan") || {}).value || "", tplFault = (st.find((x) => x.key === "sms.tpl_fault") || {}).value || "";
@@ -2501,6 +2504,7 @@
         <label>قالب لینک تأیید سرویس</label><input type="text" data-field="sms-tpl-service" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_service"))}" placeholder="پارامترها: BUILDING، DATE، CODE">
         <label>قالب یادآوری تمدید قرارداد</label><input type="text" data-field="sms-tpl-renewal" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_renewal"))}" placeholder="پارامترها: BUILDING، DATE">
         <label>قالب یادآوری تمدید بیمه‌نامه</label><input type="text" data-field="sms-tpl-insurance" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_insurance"))}" placeholder="پارامترها: BUILDING، DATE">
+        <label>قالب لینک پیشنهاد قیمت نصب (به کارفرما)</label><input type="text" data-field="sms-tpl-install" class="ltr" inputmode="numeric" value="${esc(sv("sms.tpl_install"))}" placeholder="پارامترها: PROJECT، NUMBER، CODE، HOURS">
         <label>روز یادآوری بدهی در هر ماه شمسی</label><input type="text" data-field="sms-debt-day" class="ltr" inputmode="numeric" value="${esc(fa(sv("sms.debt_day") || "5"))}">
         <div class="actions"><button class="btn secondary small" data-act="sms-cust-tpl-save">ذخیره</button><button class="btn secondary small" data-act="sms-sample">ارسال نمونه‌ی همه‌ی پیامک‌ها به شماره‌ی آزمایشی</button></div>
         <label>شماره‌ی آزمایشی پیامک</label><div class="row"><input type="text" data-field="sms-test" class="ltr" inputmode="tel" value="${esc(testMobile)}" placeholder="خالی = تلفن شرکت" style="flex:1"><button class="btn secondary small" data-act="sms-test-save">ذخیره</button></div>
@@ -2908,6 +2912,249 @@
     };
   }
 
+  /* ------------------------------------------------------------------ installation projects (D-103, CEO only)
+     step 1: project file + internal estimate + numbered price quotation (code 10) sent as a link and printed.
+     Later steps (installation contract, procurement, installation, handover, service contract) attach to the project. */
+  const IP_STAGE = { estimate: ["برآورد", "warn"], quoted: ["پیشنهاد داده شد", "info"], won: ["قرارداد بسته شد", "ok"], lost: ["از دست رفت", ""], cancelled: ["لغو", ""] };
+  const IQ_STATE = (q) => q.status === "draft" ? ["پیش‌نویس", "warn"] : q.status === "cancelled" ? ["لغو", "danger"] : q.status === "superseded" ? ["جایگزین شد", ""]
+    : (q.expired || (q.valid_until && new Date(q.valid_until) < new Date())) ? ["اعتبار تمام شد", ""] : ["معتبر", "ok"];
+  const IQ_SPEC = { drive: ["کششی", "هیدرولیک"], room: ["موتورخانه‌دار", "بدون موتورخانه"], usage: ["مسافربر", "باربر", "تخت‌بر", "خودروبر"], speed: ["0.63", "1", "1.6", "2", "2.5"], susp: ["2:1", "1:1"] };
+  const DOOR_TXT = ["", "تک درب", "دو درب", "سه درب"];
+  const rangeTxt = (a, b) => (a && b && Number(a) !== Number(b) ? `${fa(a)} تا ${fa(b)}` : fa(a || b || ""));
+  function iqIntro(s, pr) {
+    const units = Number(s.units || 1);
+    const parts = [s.drive, s.room, DOOR_TXT[Number(s.doors)] || "", s.stops ? `${fa(s.stops)} توقف` : ""].filter(Boolean).join(" – ");
+    const cap = s.persons_from ? ` به ظرفیت ${rangeTxt(s.persons_from, s.persons_to)} نفر${s.kg_from ? `، معادل ${rangeTxt(s.kg_from, s.kg_to)} کیلوگرم` : ""}` : "";
+    const sp = s.speed ? ` با سرعت نامی ${fa(String(s.speed).replace(".", "٫"))} متر بر ثانیه` : "";
+    const su = s.susp && s.drive !== "هیدرولیک" ? ` و سیستم تعلیق ${fa(s.susp)}` : "";
+    return `با سلام و آرزوی سلامتی، بدین‌وسیله قیمت فروش ${numWords(units)} دستگاه آسانسور ${parts} – ${s.usage || "مسافربر"}${cap}${sp}${su} جهت نصب در شهرستان ${pr.city || "اهواز"} (${pr.title || ""}) حضورتان اعلام می‌گردد.`;
+  }
+  const lines = (v) => String(v || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+
+  async function viewInstall() {
+    const [ps, qs] = await Promise.all([api("install_projects?select=*&order=id.desc"), api("install_quotes?select=id,project_id,version,status,document_number,valid_until,options&order=version.desc")]);
+    const latest = new Map(); qs.forEach((q) => { if (!latest.has(q.project_id) && q.status !== "draft") latest.set(q.project_id, q); });
+    const card = (p) => { const q = latest.get(p.id), st = IP_STAGE[p.stage] || [p.stage, ""];
+      const prices = q ? (q.options || []).map((o) => Number(o.total_rial || o.amount_rial)) : [];
+      return `<div class="card tap" data-act="go" data-href="#/install/${p.id}"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div>
+        <div class="small muted">${esc(p.client_name)} · ${esc(p.city || "")}${q ? ` · پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number || ""))}</bdi>` : ""}</div></div>
+        <div style="text-align:left">${prices.length ? money(Math.min(...prices)) : ""}<span class="badge ${st[1]}">${st[0]}</span></div></div></div>`; };
+    return shell("پروژه‌های نصب", "more", `<a href="#/more" data-act="back" class="small">→ بازگشت</a>
+      <div class="page-actions"><button class="btn" data-act="ip-new">+ پروژه‌ی نصب جدید</button><button class="btn secondary" data-act="ip-defaults">متن‌های پیش‌فرض پیشنهاد</button></div>
+      <div class="hint">فقط مدیرعامل این بخش را می‌بیند. هر پروژه پرونده‌ی خودش را دارد؛ مرحله‌ی اول برآورد و پیشنهاد قیمت است و مراحل بعدی نصب بعداً به همین پرونده وصل می‌شوند.</div>
+      ${ps.length ? ps.map(card).join("") : `<div class="card empty">هنوز پروژه‌ای ثبت نشده</div>`}`);
+  }
+  function sheetInstallProject(p) {
+    p = p || {};
+    sheet(`<h3>${p.id ? "ویرایش پروژه‌ی نصب" : "پروژه‌ی نصب جدید"}</h3>
+      <label>نام پروژه</label><input type="text" data-f="title" value="${esc(p.title || "")}" placeholder="مثلاً: پروژه‌ی خیابان الهام">
+      <label>کارفرما</label><input type="text" data-f="client_name" value="${esc(p.client_name || "")}" placeholder="مثلاً: مهندس درافشان و آصفی">
+      <label>موبایل کارفرما</label><input type="text" data-f="client_mobile" class="ltr" inputmode="tel" value="${esc(fa(p.client_mobile || ""))}">
+      <label>شهر</label><input type="text" data-f="city" value="${esc(p.city || "اهواز")}">
+      <label>نشانی پروژه</label><input type="text" data-f="address" value="${esc(p.address || "")}">
+      <label>یادداشت داخلی</label><textarea data-f="notes">${esc(p.notes || "")}</textarea>
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+      const v = {}; el.querySelectorAll("[data-f]").forEach((i) => { v[i.dataset.f] = i.dataset.f === "client_mobile" ? toEn(i.value.trim()) : i.value.trim(); });
+      const id = await rpc("save_install_project", { p_id: p.id || null, p: v });
+      close(); toast("پروژه ذخیره شد"); location.hash = `#/install/${id}`; route();
+    })));
+  }
+  async function viewInstallProject(id) {
+    const [[p], qs] = await Promise.all([api(`install_projects?id=eq.${id}&select=*`), api(`install_quotes?project_id=eq.${id}&select=*&order=version.desc`)]);
+    if (!p) return shell("پروژه‌ی نصب", "more", `<div class="card empty">پیدا نشد</div>`);
+    const st = IP_STAGE[p.stage] || [p.stage, ""], draft = qs.find((q) => q.status === "draft");
+    const qcard = (q) => { const s = IQ_STATE(q);
+      return `<div class="card tap" data-act="go" data-href="#/iq/${q.id}"><div class="item-head"><div><div class="item-title">${q.document_number ? `پیشنهاد <bdi dir="ltr">${esc(fa(q.document_number))}</bdi>` : "پیش‌نویس پیشنهاد"} · نسخه ${fa(q.version)}</div>
+        <div class="small muted">${q.issued_at ? `صدور ${jtime(q.issued_at)} · اعتبار تا ${jtime(q.valid_until)}` : `آخرین تغییر ${jtime(q.updated_at)}`}</div>
+        ${(q.options || []).map((o) => `<div class="small">${esc(o.label)}: ${money(o.total_rial || o.amount_rial)}</div>`).join("")}</div><span class="badge ${s[1]}">${s[0]}</span></div></div>`; };
+    return shell(p.title, "more", `<a href="#/install" data-act="back" class="small">→ بازگشت</a>
+      <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)}</div><div class="small muted">${esc(p.client_name)}${p.client_mobile ? ` · <bdi dir="ltr">${esc(fa(p.client_mobile))}</bdi>` : ""}</div>
+        <div class="small muted">${esc(p.city || "")}${p.address ? " · " + esc(p.address) : ""}</div>${p.notes ? `<div class="small">${txt(p.notes)}</div>` : ""}</div><span class="badge ${st[1]}">${st[0]}</span></div>
+        <label>مرحله‌ی پروژه</label><div class="row"><select data-f="stage" style="flex:1">${Object.entries(IP_STAGE).map(([k, v]) => `<option value="${k}"${k === p.stage ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
+        <button class="btn secondary small" data-act="ip-stage" data-id="${id}">ثبت مرحله</button></div>
+        <div class="actions"><button class="btn secondary small" data-act="ip-edit" data-id="${id}">ویرایش اطلاعات</button></div></div>
+      <div class="section-title"><h2>برآورد و پیشنهاد قیمت</h2></div>
+      <div class="page-actions">${draft ? `<button class="btn" data-act="go" data-href="#/iq/${draft.id}">ادامه‌ی پیش‌نویس</button>` : `<button class="btn" data-act="iq-new" data-id="${id}">+ پیشنهاد قیمت جدید</button>`}</div>
+      ${qs.length ? qs.map(qcard).join("") : `<div class="card empty">هنوز برآوردی ثبت نشده</div>`}`);
+  }
+  async function newInstallQuote(projectId) {
+    const [[p], d] = await Promise.all([api(`install_projects?id=eq.${projectId}&select=*`), rpc("get_install_defaults")]);
+    const spec = { drive: "کششی", room: "موتورخانه‌دار", doors: 1, usage: "مسافربر", susp: "2:1", units: 1 };
+    const id = await rpc("save_install_quote", { p_id: null, p: { project_id: projectId, recipient: `حضور محترم ${p.client_name}`, spec, intro: null,
+      tech_items: d.tech_items || [], price_intro: d.price_intro || "", options: [], notes_items: [], conditions: d.conditions || [], vat_exempt: false, valid_hours: 24 } });
+    location.hash = `#/iq/${id}`;
+  }
+  async function viewInstallQuote(id) {
+    const [q] = await api(`install_quotes?id=eq.${id}&select=*,install_projects(*)`);
+    if (!q) return shell("پیشنهاد قیمت", "more", `<div class="card empty">پیدا نشد</div>`);
+    const p = q.install_projects || {}, s = IQ_STATE(q);
+    if (q.status !== "draft") {
+      const acts = [`<button class="btn" data-act="iq-print" data-id="${id}">چاپ / PDF</button>`];
+      if (q.status === "issued" && !(new Date(q.valid_until) < new Date())) acts.push(`<button class="btn" data-act="iq-sms" data-id="${id}">ارسال پیامک به کارفرما</button>`);
+      if (q.status === "issued") acts.push(`<button class="btn secondary" data-act="iq-share" data-code="${esc(q.short_code)}" data-no="${esc(q.document_number)}">لینک برای کارفرما</button>`);
+      acts.push(`<button class="btn secondary" data-act="iq-copy" data-id="${id}">نسخه‌ی جدید از روی این</button>`);
+      if (q.status === "issued") acts.push(`<button class="btn secondary danger-text" data-act="iq-cancel" data-id="${id}">لغو</button>`);
+      return shell("پیشنهاد قیمت نصب", "more", `<a href="#/install/${p.id}" data-act="back" class="small">→ بازگشت</a>
+        <div class="card"><div class="item-head"><div><div class="item-title">${esc(p.title)} · نسخه ${fa(q.version)}</div><div class="small muted">${esc(q.recipient || "")}</div>
+          <div class="small">صدور ${jtime(q.issued_at)} · اعتبار ${fa(q.valid_hours)} ساعت تا ${jtime(q.valid_until)}</div>${q.cancel_note ? `<div class="small debt">لغو: ${esc(q.cancel_note)}</div>` : ""}</div><span class="badge ${s[1]}">${s[0]}</span></div>
+          <table class="list" style="margin-top:8px">${(q.options || []).map((o) => `<tr><td>${esc(o.label)}<div class="small muted">پیش از مالیات ${num(o.amount_rial)} ریال${q.vat_exempt ? " · معاف از ارزش افزوده" : ` · ارزش افزوده ${num(o.vat_rial)}`}</div></td><td>${money(o.total_rial)}</td></tr>`).join("")}</table>
+          <div class="actions">${acts.join("")}</div></div>`);
+    }
+    const sp = q.spec || {};
+    const sel = (f, list, v) => `<select data-s="${f}">${list.map((x) => `<option${String(x) === String(v ?? "") ? " selected" : ""}>${esc(x)}</option>`).join("")}</select>`;
+    const numIn = (f, v, ph) => `<input type="text" inputmode="decimal" class="ltr" data-s="${f}" value="${esc(fa(v ?? ""))}" placeholder="${ph || ""}">`;
+    const opts = (q.options || []).length ? q.options : [{ label: "", amount_rial: null }];
+    return shell(`پیشنهاد قیمت — پیش‌نویس`, "more", `<a href="#/install/${p.id}" data-act="back" class="small">→ بازگشت</a>
+      <div id="iq-form" data-id="${id}">
+      <div class="card"><div class="item-title">${esc(p.title)} · نسخه ${fa(q.version)}</div><div class="hint">پیش‌نویس فقط برای شماست؛ با «صدور» شماره (کد ۱۰) و لینک می‌گیرد و دیگر ویرایش نمی‌شود.</div>
+        <label>گیرنده</label><input type="text" data-q="recipient" value="${esc(q.recipient || "")}"></div>
+      <div class="card"><div class="item-title">مشخصات دستگاه</div>
+        <div class="row"><div style="flex:1"><label>نوع</label>${sel("drive", IQ_SPEC.drive, sp.drive)}</div><div style="flex:1"><label>موتورخانه</label>${sel("room", IQ_SPEC.room, sp.room)}</div></div>
+        <div class="row"><div style="flex:1"><label>تعداد درب</label>${sel("doors", [1, 2, 3], sp.doors)}</div><div style="flex:1"><label>تعداد توقف</label>${numIn("stops", sp.stops, "۱۳")}</div></div>
+        <div class="row"><div style="flex:1"><label>کاربری</label>${sel("usage", IQ_SPEC.usage, sp.usage)}</div><div style="flex:1"><label>تعداد دستگاه</label>${numIn("units", sp.units || 1)}</div></div>
+        <div class="row"><div style="flex:1"><label>ظرفیت از (نفر)</label>${numIn("persons_from", sp.persons_from, "۸")}</div><div style="flex:1"><label>تا (نفر)</label>${numIn("persons_to", sp.persons_to, "۱۰")}</div></div>
+        <div class="row"><div style="flex:1"><label>از (کیلوگرم)</label>${numIn("kg_from", sp.kg_from, "۶۰۰")}</div><div style="flex:1"><label>تا (کیلوگرم)</label>${numIn("kg_to", sp.kg_to, "۷۵۰")}</div></div>
+        <div class="row"><div style="flex:1"><label>سرعت نامی (متر بر ثانیه)</label>${sel("speed", ["", ...IQ_SPEC.speed], sp.speed)}</div><div style="flex:1"><label>تعلیق</label>${sel("susp", IQ_SPEC.susp, sp.susp)}</div></div>
+        <label>متن مشخصات کلی (از روی مشخصات ساخته می‌شود؛ قابل ویرایش)</label><textarea data-q="intro" rows="5">${esc(q.intro || iqIntro(sp, p))}</textarea>
+        <div class="actions"><button class="btn secondary small" data-act="iq-intro">ساخت دوباره از مشخصات</button></div></div>
+      <div class="card"><div class="item-title">مشخصات فنی</div><div class="hint">هر بند در یک خط.</div>
+        <textarea data-q="tech_items" rows="12">${esc((q.tech_items || []).join("\n"))}</textarea>
+        <div class="actions"><button class="btn secondary small" data-act="iq-def" data-k="tech_items">ذخیره به‌عنوان پیش‌فرض</button></div></div>
+      <div class="card"><div class="item-title">پیشنهاد قیمت</div>
+        <label>متن پیش از مبلغ‌ها</label><textarea data-q="price_intro" rows="3">${esc(q.price_intro || "")}</textarea>
+        <div id="iq-opts">${opts.map((o, i) => iqOptRow(i, o)).join("")}</div>
+        <div class="actions"><button class="btn secondary small" data-act="iq-opt-add">+ گزینه‌ی قیمت</button></div>
+        <label class="check"><input type="checkbox" data-q="vat_exempt"${q.vat_exempt ? " checked" : ""}> معاف از ارزش افزوده (بدون تیک: ${fa(VAT_RATE)}٪ روی هر مبلغ اضافه می‌شود)</label>
+        <div class="card doc-sum" id="iq-sum"></div></div>
+      <div class="card"><div class="item-title">توضیحات زیر قیمت</div><div class="hint">مثلاً: قیمت دستگاه ۶ نفره‌ی همین پروژه ... ریال کمتر است. هر توضیح در یک خط؛ می‌تواند خالی بماند.</div>
+        <textarea data-q="notes_items" rows="3">${esc((q.notes_items || []).join("\n"))}</textarea></div>
+      <div class="card"><div class="item-title">شرایط</div><div class="hint">هر بند در یک خط.</div>
+        <textarea data-q="conditions" rows="8">${esc((q.conditions || []).join("\n"))}</textarea>
+        <div class="actions"><button class="btn secondary small" data-act="iq-def" data-k="conditions">ذخیره به‌عنوان پیش‌فرض</button></div>
+        <label>اعتبار قیمت (ساعت پس از صدور)</label><input type="text" inputmode="numeric" class="ltr" data-q="valid_hours" value="${esc(fa(q.valid_hours || 24))}"></div>
+      <div class="actions"><button class="btn" data-act="iq-save" data-id="${id}">ذخیره‌ی پیش‌نویس</button><button class="btn secondary" data-act="iq-preview" data-id="${id}">پیش‌نمایش چاپی</button>
+        <button class="btn ok" data-act="iq-issue" data-id="${id}">صدور و گرفتن شماره</button><button class="btn secondary danger-text" data-act="iq-cancel" data-id="${id}">حذف پیش‌نویس</button></div>
+      </div>`);
+  }
+  function iqOptRow(i, o) {
+    return `<div class="card" data-opt="${i}" style="background:var(--surface-2)"><label>شرح گزینه ${fa(i + 1)} (ترکیب انتخاب‌ها)</label><input type="text" data-o="label" value="${esc(o.label || "")}" placeholder="مثلاً: درب سلکوم و تابلو آرکل ترکیه">
+      ${amountFieldHtml(`iqo${i}`, "مبلغ پیش از ارزش افزوده")}<input type="hidden" data-o="init" value="${o.amount_rial ? Number(o.amount_rial) : ""}">
+      <div class="actions"><button class="btn secondary small danger-text" data-act="iq-opt-del">حذف این گزینه</button></div></div>`;
+  }
+  function bindIqForm() {
+    const f = document.getElementById("iq-form"); if (!f || f.dataset.bound) return; f.dataset.bound = "1";
+    const bindRow = (row) => { const i = row.dataset.opt; bindAmount(row, `iqo${i}`); const init = row.querySelector('[data-o="init"]').value;
+      if (init) { const inp = row.querySelector(`[data-amount="iqo${i}"]`); inp.value = String(Math.round(Number(init) / 10)); inp.dispatchEvent(new Event("input")); } };
+    f.querySelectorAll("[data-opt]").forEach(bindRow);
+    const sum = () => { const d = readIqForm(f), box = document.getElementById("iq-sum");
+      box.innerHTML = d.options.length ? d.options.map((o) => { const v = d.vat_exempt ? 0 : Math.round(o.amount_rial * VAT_RATE / 100);
+        return `<div class="row"><span class="spacer">${esc(o.label || "بدون شرح")}</span><b>${money(o.amount_rial + v)}</b></div>`; }).join("") + `<div class="small muted">مبلغ نهایی هر گزینه ${d.vat_exempt ? "(معاف از ارزش افزوده)" : `با ${fa(VAT_RATE)}٪ ارزش افزوده`}</div>` : `<div class="small muted">مبلغی وارد نشده</div>`; };
+    f.addEventListener("input", sum); f.addEventListener("change", sum); f.addEventListener("click", (e) => setTimeout(sum, 0)); sum();
+    f.__addRow = () => { const box = document.getElementById("iq-opts"), i = Math.max(-1, ...[...box.querySelectorAll("[data-opt]")].map((r) => Number(r.dataset.opt))) + 1;
+      box.insertAdjacentHTML("beforeend", iqOptRow(i, {})); bindRow(box.lastElementChild); };
+  }
+  function readIqForm(f) {
+    const v = (k) => f.querySelector(`[data-q="${k}"]`);
+    const spec = {}; f.querySelectorAll("[data-s]").forEach((i) => { const raw = toEn(i.value.trim()); spec[i.dataset.s] = ["stops", "units", "persons_from", "persons_to", "kg_from", "kg_to", "doors"].includes(i.dataset.s) ? (raw ? Number(raw.replace(/[^\d]/g, "")) || null : null) : raw; });
+    const options = [...f.querySelectorAll("[data-opt]")].map((r) => ({ label: r.querySelector('[data-o="label"]').value.trim(), amount_rial: readAmount(r, `iqo${r.dataset.opt}`).rial || 0 }))
+      .filter((o) => o.label || o.amount_rial);
+    return { recipient: v("recipient").value.trim(), spec, intro: v("intro").value.trim(), tech_items: lines(v("tech_items").value), price_intro: v("price_intro").value.trim(),
+      options, notes_items: lines(v("notes_items").value), conditions: lines(v("conditions").value), vat_exempt: v("vat_exempt").checked,
+      valid_hours: Number(toEn(v("valid_hours").value).replace(/[^\d]/g, "")) || 24 };
+  }
+  function renderInstallQuotePages(host, q, company, draft) {
+    const p = q.project || q.install_projects || {}, s = IQ_STATE(q);
+    const head = `<div class="pp-title"><h1>پیشنهاد قیمت آسانسور<small>${esc(p.title || "")} · نسخه ${fa(q.version || 1)}${q.issued_at ? ` · صدور ${jtime(q.issued_at)} · اعتبار ${fa(q.valid_hours)} ساعت تا ${jtime(q.valid_until)}` : ""}</small></h1>${draft ? "" : `<span class="pp-chip y">${esc(s[0])}</span>`}</div><div class="pp-rule"></div>`;
+    const opts = (q.options || []).map((o) => { const v = o.vat_rial ?? (q.vat_exempt ? 0 : Math.round(Number(o.amount_rial) * VAT_RATE / 100)), t = o.total_rial ?? Number(o.amount_rial) + v; return { ...o, v, t }; });
+    const rows = opts.map((o, k) => `<tr><td class="c">${fa(k + 1)}</td><td>${esc(o.label)}<div class="pp-sub" style="text-align:right">به حروف: ${numWords(o.t)} ریال</div></td><td class="n">${num(o.amount_rial)}</td><td class="n">${q.vat_exempt ? "معاف" : num(o.v)}</td><td class="n"><b>${num(o.t)}</b></td></tr>`).join("");
+    const blocks = [`<p style="margin:0 0 2mm"><b>${esc(q.recipient || "")}</b></p><p style="margin:0 0 3mm;text-align:justify">${esc(fa(q.intro || ""))}</p><h3 style="margin:0 0 1.5mm;font-size:10pt;color:var(--g)">مشخصات فنی</h3>`,
+      ...(q.tech_items || []).map((t, i) => `<div style="display:flex;gap:2mm;margin:0 0 .8mm;text-align:justify"><span style="color:var(--g);font-weight:800">${fa(i + 1)}.</span><span>${esc(fa(t))}</span></div>`),
+      `<h3 style="margin:3mm 0 1.5mm;font-size:10pt;color:var(--g)">پیشنهاد قیمت</h3><p style="margin:0 0 2mm;text-align:justify">${esc(fa(q.price_intro || ""))}</p>` +
+        tbl([["ردیف", "9mm"], ["ترکیب"], ["مبلغ (ریال)", "30mm"], [`ارزش افزوده${q.vat_exempt ? "" : ` ${fa(Number(q.vat_rate || VAT_RATE))}٪`}`, "26mm"], ["مبلغ کل (ریال)", "32mm"]], rows),
+      ...((q.notes_items || []).length ? [`<div class="pp-words">${q.notes_items.map((n) => `<div>* ${esc(fa(n))}</div>`).join("")}</div>`] : []),
+      `<div class="pp-box y"><h3>شرایط</h3>${(q.conditions || []).map((c, i) => `<div>${fa(i + 1)}. ${esc(fa(c))}</div>`).join("")}<div>${fa((q.conditions || []).length + 1)}. اعتبار قیمت اعلام‌شده تا ${fa(q.valid_hours || 24)} ساعت پس از تاریخ صدور${q.valid_until ? ` (${jtime(q.valid_until)})` : ""} می‌باشد.</div></div>`,
+      `<div style="text-align:left;margin-top:4mm;font-weight:800">با تقدیم احترام<br>آسانسور پایاکو</div>`];
+    paginate(host, { no: q.document_number || q.number || "—", date: q.issued_at ? jdateTz(q.issued_at) : jdate(todayTehran()), form: "PY-FO-PC-G10", rev: 0, issued: "۱۴۰۵/۰۸/۱۱" }, company || q.company || {}, head, blocks, { draft });
+  }
+  async function printInstallQuote(id, draftData) {
+    const [[q], company] = await Promise.all([api(`install_quotes?id=eq.${id}&select=*,install_projects(*)`), rpc("get_company_profile")]);
+    const d = draftData ? { ...q, ...draftData } : q;
+    openPrint(draftData ? "پیش‌نمایش پیشنهاد قیمت" : `پیشنهاد قیمت ${fa(q.document_number || "")}`, (host) => renderInstallQuotePages(host, d, company, !!draftData));
+  }
+  async function viewPublicInstallQuote(code) {
+    $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
+    let q;
+    try { q = await publicRpc("get_install_quote_by_code", { p_code: code }); } catch (e) {
+      $app.innerHTML = `<div class="login-wrap"><div class="login-card"><h1>پیشنهاد قیمت پیدا نشد</h1><p class="muted">لینک نادرست است. با دفتر پایاکو تماس بگیرید.</p></div></div>`; return;
+    }
+    const s = IQ_STATE(q);
+    $app.innerHTML = `<main class="doc-page"><div class="pp-pages screen-doc"></div>
+      <div class="actions no-print doc-actions"><span class="badge ${s[1]}">${s[0]}</span><button class="btn" data-act="doc-print">چاپ / ذخیره PDF</button></div>
+      ${q.status === "superseded" ? `<div class="hint no-print">نسخه‌ی جدیدتری از این پیشنهاد برای شما صادر شده است.</div>` : ""}
+      ${q.status === "cancelled" ? `<div class="hint no-print">این پیشنهاد لغو شده است.</div>` : ""}
+      ${q.company && q.company.phone ? `<div class="small muted no-print" style="margin-top:8px">تماس با پایاکو: <a href="tel:${esc(toEn(q.company.phone))}" class="ltr">${esc(fa(q.company.phone))}</a></div>` : ""}</main>`;
+    const host = $app.querySelector(".pp-pages"); host.style.setProperty("--z", String(Math.min(1, (window.innerWidth - 16) / 794)));
+    renderInstallQuotePages(host, q, q.company, false);
+    $app.onclick = (e) => { const a = e.target.closest("[data-act]"); if (a && a.dataset.act === "doc-print") window.print(); };
+  }
+  async function sheetInstallDefaults() {
+    const d = await rpc("get_install_defaults");
+    sheet(`<h3>متن‌های پیش‌فرض پیشنهاد قیمت</h3><div class="hint">هر پیشنهاد تازه با این متن‌ها شروع می‌شود؛ در هر پیشنهاد می‌توانید تغییرشان دهید. هر بند در یک خط.</div>
+      <label>مشخصات فنی</label><textarea data-f="tech_items" rows="10">${esc((d.tech_items || []).join("\n"))}</textarea>
+      <label>متن پیش از مبلغ‌ها</label><textarea data-f="price_intro" rows="3">${esc(d.price_intro || "")}</textarea>
+      <label>شرایط</label><textarea data-f="conditions" rows="8">${esc((d.conditions || []).join("\n"))}</textarea>
+      <div class="actions"><button class="btn" data-act="save">ذخیره</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+      const g = (k) => el.querySelector(`[data-f="${k}"]`).value;
+      await rpc("set_install_defaults", { p: { tech_items: lines(g("tech_items")), price_intro: g("price_intro").trim(), conditions: lines(g("conditions")) } });
+      close(); toast("متن‌های پیش‌فرض ذخیره شد");
+    })));
+  }
+  async function sendInstallQuoteSms(id) {
+    const pre = await callFunction("notify-customers", { kind: "install_quote", quote_id: id, dry_run: true });
+    sheet(`<h3>ارسال پیشنهاد قیمت با پیامک</h3>
+      ${pre.test ? `<div class="hint">حالت آزمایشی: پیامک به شماره‌ی آزمایشی <bdi dir="ltr">${esc(fa(pre.to || ""))}</bdi> می‌رود.</div>` : ""}
+      <label>شماره‌ی کارفرما</label><input type="text" data-field="mobile" class="ltr" inputmode="tel" value="${esc(fa(pre.intended || ""))}">
+      <div class="card small" style="white-space:pre-line">${esc(pre.text)}</div>
+      <div class="actions"><button class="btn" data-act="save">ارسال</button><button class="btn secondary" data-close>انصراف</button></div>`,
+    (el, close) => el.querySelector('[data-act="save"]').addEventListener("click", (e) => guarded(e.target, async () => {
+      const r = await callFunction("notify-customers", { kind: "install_quote", quote_id: id, mobile: toEn(el.querySelector('[data-field="mobile"]').value.trim()) || null });
+      close(); toast(`پیامک به ${fa(r.to)} فرستاده شد${r.test ? " (آزمایشی)" : ""}`);
+    })));
+  }
+  function installClick(act, el, id) {
+    if (act === "ip-new") sheetInstallProject();
+    if (act === "ip-edit") api(`install_projects?id=eq.${id}&select=*`).then(([p]) => sheetInstallProject(p)).catch((er) => toast(er.message));
+    if (act === "ip-defaults") sheetInstallDefaults().catch((er) => toast(er.message));
+    if (act === "ip-stage") rpc("set_install_project_stage", { p_id: id, p_stage: document.querySelector('[data-f="stage"]').value }).then(() => { toast("مرحله ثبت شد"); route(); }).catch((er) => toast(er.message));
+    if (act === "iq-new") newInstallQuote(id).catch((er) => toast(er.message));
+    const f = document.getElementById("iq-form");
+    if (act === "iq-intro" && f) api(`install_quotes?id=eq.${f.dataset.id}&select=install_projects(*)`).then(([r]) => { f.querySelector('[data-q="intro"]').value = iqIntro(readIqForm(f).spec, r.install_projects || {}); toast("متن از روی مشخصات ساخته شد"); }).catch((er) => toast(er.message));
+    if (act === "iq-opt-add" && f) f.__addRow();
+    if (act === "iq-opt-del") { const r = el.closest("[data-opt]"); if (r && document.querySelectorAll("#iq-opts [data-opt]").length > 1) r.remove(); else if (r) { r.querySelector('[data-o="label"]').value = ""; const i = r.querySelector("[data-amount]"); i.value = ""; i.dispatchEvent(new Event("input")); } }
+    if (act === "iq-def" && f) { const k = el.dataset.k; if (confirm("این متن پیش‌فرض پیشنهادهای بعدی شود؟")) rpc("set_install_defaults", { p: { [k]: readIqForm(f)[k] } }).then(() => toast("پیش‌فرض ذخیره شد")).catch((er) => toast(er.message)); }
+    if (act === "iq-save" && f) guarded(el, async () => { await rpc("save_install_quote", { p_id: id, p: readIqForm(f) }); toast("پیش‌نویس ذخیره شد"); });
+    if (act === "iq-preview" && f) printInstallQuote(id, readIqForm(f)).catch((er) => toast(er.message));
+    if (act === "iq-issue" && f) guarded(el, async () => {
+      const d = readIqForm(f);
+      if (!d.options.length) throw new Error("حداقل یک مبلغ پیشنهادی وارد کنید");
+      if (d.options.some((o) => !o.label || !o.amount_rial)) throw new Error("هر گزینه‌ی قیمت باید شرح و مبلغ داشته باشد");
+      if (!confirm(`پیشنهاد صادر شود؟ شماره (کد ۱۰) و لینک می‌گیرد، اعتبارش ${fa(d.valid_hours)} ساعت از همین حالا شروع می‌شود و دیگر ویرایش نمی‌شود.`)) return;
+      await rpc("save_install_quote", { p_id: id, p: d });
+      const r = await rpc("issue_install_quote", { p_id: id });
+      toast("پیشنهاد قیمت صادر شد"); route();
+    });
+    if (act === "iq-print") printInstallQuote(id).catch((er) => toast(er.message));
+    if (act === "iq-sms") sendInstallQuoteSms(id).catch((er) => toast(er.message));
+    if (act === "iq-share") {
+      const url = `${location.origin}${location.pathname}?q=${el.dataset.code}`, text = `پیشنهاد قیمت آسانسور پایاکو شماره ${fa(el.dataset.no)}:`;
+      if (navigator.share) navigator.share({ title: text, text, url }).catch(() => {}); else copyText(url);
+    }
+    if (act === "iq-copy") rpc("copy_install_quote", { p_id: id }).then((nid) => { toast("نسخه‌ی جدید (پیش‌نویس) ساخته شد"); location.hash = `#/iq/${nid}`; }).catch((er) => toast(er.message));
+    if (act === "iq-cancel") { const note = prompt(f ? "پیش‌نویس حذف (لغو) شود؟ دلیل (اختیاری):" : "دلیل لغو پیشنهاد:"); if (note !== null) rpc("cancel_install_quote", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
+  }
+
   /* print renderers on the letterhead: G04 statement, G06 repair invoice, G07 proforma */
   const tbl = (head, rows) => `<table class="pp-items"><thead><tr>${head.map(([h, w]) => `<th${w ? ` style="width:${w}"` : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
   const sumTbl = (rows) => `<table class="pp-sum">${rows.map(([l, v, cls]) => `<tr class="${cls || ""}"><td>${l}</td><td class="n">${v}</td></tr>`).join("")}</table>`;
@@ -3031,6 +3278,10 @@
     if (qv && /^[a-zA-Z0-9]{6,16}$/.test(qv) && !location.hash) { history.replaceState(null, "", location.pathname + "#/sv/" + qv); return viewPublicService(qv); }
     const sv = location.hash.match(/^#\/sv\/([a-zA-Z0-9]{6,16})$/);
     if (sv) return viewPublicService(sv[1]);
+    const qq = new URLSearchParams(location.search).get("q");
+    if (qq && /^[a-zA-Z0-9]{6,16}$/.test(qq) && !location.hash) { history.replaceState(null, "", location.pathname + "#/iqp/" + qq); return viewPublicInstallQuote(qq); }
+    const iqp = location.hash.match(/^#\/iqp\/([a-zA-Z0-9]{6,16})$/);
+    if (iqp) return viewPublicInstallQuote(iqp[1]);
     const pp = location.hash.match(/^#\/pf\/([a-zA-Z0-9]{6,16})$/);
     if (pp) return viewPublicProforma(pp[1]);
     if (!session) return viewLogin();
@@ -3078,6 +3329,8 @@
         case "debts": html = can.recordPayment() ? await viewDebts() : await viewDashboard(); break;
         case "docs": html = isStaff() ? await viewDocs() : await viewDashboard(); break;
         case "proforma": html = await viewProforma(Number(arg)); break;
+        case "install": html = role() === "CEO" ? (arg ? await viewInstallProject(Number(arg)) : await viewInstall()) : await viewDashboard(); break;
+        case "iq": html = role() === "CEO" ? await viewInstallQuote(Number(arg)) : await viewDashboard(); break;
         case "templates": html = role() === "CEO" ? await viewTemplates() : await viewDashboard(); break;
         case "reports": html = role() === "CEO" ? await viewReports() : await viewDashboard(); break;
         case "pending": html = role() === "TECHNICIAN" ? await viewFaults() : await viewPending(arg); break;
@@ -3085,6 +3338,7 @@
         default: html = role() === "TECHNICIAN" ? await viewFaults() : await viewDashboard();
       }
       $app.innerHTML = html;
+      if (page === "iq") bindIqForm();
       if (SEARCH_PAGES.includes(page || def)) injectListSearch(page || def);
       if (payOffer && page === "doc" && Number(arg) === payOffer) {
         const inv = payOffer; payOffer = null;
@@ -3141,6 +3395,7 @@
     if (act === "pf-reject") { const note = prompt("دلیل رد از طرف کارفرما:"); if (note !== null) rpc("decide_proforma", { p_id: id, p_approve: false, p_note: note.trim() || null }).then(() => { toast("رد شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "pf-cancel") { const note = prompt("دلیل لغو پیش‌فاکتور:"); if (note !== null) rpc("cancel_proforma", { p_id: id, p_note: note.trim() || null }).then(() => { toast("لغو شد"); route(); }).catch((er) => toast(er.message)); }
     if (act === "pf-sms") sendProformaSms(id).catch((er) => toast(er.message));
+    if (act.startsWith("ip-") || act.startsWith("iq-")) installClick(act, el, id);
     if (act === "pf-share") {
       const url = `${location.origin}${location.pathname}?p=${el.dataset.code}`, text = `پیش‌فاکتور پایاکو شماره ${fa(el.dataset.no)} — برای مشاهده و تأیید:`;
       if (navigator.share) navigator.share({ title: text, text, url }).catch(() => {}); else copyText(url);
@@ -3271,7 +3526,7 @@
     if (act === "sms-tech-tpl-save") guarded(el, async () => { await rpc("set_sms_tech_templates", { p_plan: toEn(document.querySelector("[data-field=sms-tpl-plan]").value.trim()), p_fault: toEn(document.querySelector("[data-field=sms-tpl-fault]").value.trim()) }); toast("ذخیره شد"); });
     if (act === "sms-test-save") guarded(el, async () => { await rpc("set_sms_test_mobile", { p_mobile: toEn(document.querySelector("[data-field=sms-test]").value.trim()) }); toast("ذخیره شد"); });
     if (act === "sms-cust-tpl-save") guarded(el, async () => { const v = (k) => toEn(document.querySelector(`[data-field=${k}]`).value.trim());
-      await rpc("set_sms_customer_templates", { p: { proforma: v("sms-tpl-proforma"), service: v("sms-tpl-service"), renewal: v("sms-tpl-renewal"), insurance: v("sms-tpl-insurance"), debt_day: Number(v("sms-debt-day")) || 5 } }); toast("ذخیره شد"); });
+      await rpc("set_sms_customer_templates", { p: { proforma: v("sms-tpl-proforma"), service: v("sms-tpl-service"), renewal: v("sms-tpl-renewal"), insurance: v("sms-tpl-insurance"), install: v("sms-tpl-install"), debt_day: Number(v("sms-debt-day")) || 5 } }); toast("ذخیره شد"); });
     if (act === "sms-sample") guarded(el, async () => { if (!confirm("از هر نوع پیامک یک نمونه با داده‌ی واقعی به شماره‌ی آزمایشی فرستاده شود؟")) return;
       const r = await callFunction("notify-customers", { kind: "sample" });
       sheet(`<h3>نتیجه‌ی ارسال نمونه به <bdi dir="ltr">${esc(fa(r.to || ""))}</bdi></h3>${(r.results || []).map((x) => `<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span class="spacer">${esc(x.kind)}</span>${x.ok ? `<span class="badge ok">فرستاده شد</span>` : `<span class="badge danger">${esc(x.error || "ناموفق")}</span>`}</div>`).join("")}

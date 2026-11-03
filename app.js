@@ -848,12 +848,14 @@
       <label>ساختمان / قرارداد</label>${contractSelectHtml(contracts)}
       <div data-field="unit-wrap"></div>
       <label>شرح خرابی</label><textarea data-field="desc" placeholder="مثلاً: آسانسور خاموش است / شخص داخل کابین گیر کرده"></textarea>
-      <div class="hint">اولویت خودکار تعیین می‌شود: گیر افتادن شخص = اضطراری، خاموش = بالا.</div>
+      <label>فوریت</label><div class="if-chips pri-chips" data-field="pri">${[["emergency", "اضطراری — شخص گیر کرده"], ["high", "بالا — آسانسور خاموش"], ["normal", "عادی"], ["low", "کم"]].map(([k, l]) => `<button type="button" data-v="${k}" class="${k === "emergency" ? "bad" : ""}">${l}</button>`).join("")}</div>
       ${isStaff() ? `<label>اعلام‌کننده (تلفنی)</label><input type="text" data-field="by" placeholder="نام و شماره تماس">` : ""}
       <div class="actions"><button class="btn" data-act="save">ثبت</button><button class="btn secondary" data-close>انصراف</button></div>`,
     (el, close) => {
       // a contract with several elevators (e.g. one contract for six codes) asks which unit failed,
       // so the fault lands on that unit's own code and building
+      el.querySelector('[data-field="pri"]').addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return;
+        el.querySelectorAll('[data-field="pri"] button').forEach((x) => x.classList.toggle("on", x === b)); });
       let units = [];
       const sel = el.querySelector('[data-field="contract"]');
       const wrap = el.querySelector('[data-field="unit-wrap"]');
@@ -887,8 +889,10 @@
         }
         const desc = el.querySelector('[data-field="desc"]').value.trim();
         if (!desc) throw new Error("شرح خرابی را بنویسید");
+        const pri = el.querySelector('[data-field="pri"] button.on');
+        if (!pri) throw new Error("فوریت خرابی را انتخاب کنید");
         const by = el.querySelector('[data-field="by"]');
-        const [f] = await api("faults", { method: "POST", prefer: "return=representation", body: {
+        const [f] = await api("faults", { method: "POST", prefer: "return=representation", body: { priority: pri.dataset.v,
           contract_id: c.id, building_id: buildingId, subscription_code: code,
           fault_description: desc, reported_by: by ? by.value.trim() || null : null,
           reported_by_user_id: session.user_id, status: "reported", reported_at: new Date().toISOString() } });
@@ -908,6 +912,8 @@
     const b = f.buildings || {};
     let actions = "";
     if (can.manageFaults() && !["closed", "cancelled"].includes(f.status)) {
+      actions += `<label>فوریت</label><div class="row"><select data-field="pri" style="flex:1">${Object.entries(PRIORITY).map(([k, v]) => `<option value="${k}"${k === f.priority ? " selected" : ""}>${v[0]}</option>`).join("")}</select>
+        <button class="btn secondary small" data-act="set-pri">ثبت فوریت</button></div>`;
       actions += `<label>ارجاع به تکنسین</label><div class="row"><select data-field="tech" style="flex:1"><option value="">— انتخاب —</option>
         ${techs.filter((t) => t.status === "active" || t.id === f.technician_id).map((t) => `<option value="${t.id}" ${t.id === f.technician_id ? "selected" : ""}>${esc(t.name)}${t.skills && t.skills.length ? " — " + esc(skillText(t)) : ""}</option>`).join("")}</select>
         <button class="btn small" data-act="assign">ارجاع</button></div>
@@ -952,6 +958,9 @@
       el.addEventListener("click", (e) => {
         const btn = e.target.closest("[data-act]"); if (!btn) return;
         const act = btn.dataset.act;
+        if (act === "set-pri") guarded(btn, async () => {
+          await api(`faults?id=eq.${id}`, { method: "PATCH", body: { priority: el.querySelector('[data-field="pri"]').value } });
+          close(); toast("فوریت ثبت شد"); route(); });
         if (act === "assign") guarded(btn, async () => {
           const t = el.querySelector('[data-field="tech"]').value; if (!t) throw new Error("تکنسین را انتخاب کنید");
           await api(`faults?id=eq.${id}`, { method: "PATCH", body: { technician_id: Number(t), status: f.status === "reported" ? "assigned" : f.status } });

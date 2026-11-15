@@ -4146,7 +4146,7 @@
       ${c.account_holder ? `<p class="ppm-holder">به نام: <b>${esc(c.account_holder)}</b></p>` : ""}
       ${c.card_no ? copyRow("شماره کارت", toEn(c.card_no).replace(/[^0-9]/g, ""), groupCard(c.card_no)) : ""}
       ${c.account_no ? copyRow("شماره حساب", toEn(c.account_no).replace(/[^0-9]/g, ""), toEn(c.account_no)) : ""}
-      ${c.sheba ? copyRow("شماره شبا", toEn(c.sheba).replace(/[^0-9A-Za-z]/g, "").toUpperCase(), toEn(c.sheba).toUpperCase()) : ""}
+      ${c.sheba ? copyRow("شماره شبا", toEn(c.sheba).replace(/[^0-9]/g, ""), toEn(c.sheba).toUpperCase()) : ""}
     </section>` : "";
     host.innerHTML = `<article class="ppm-card ppm-document" dir="rtl">
       <header class="ppm-head"><div class="ppm-brand-lockup"><img class="ppm-logo" src="icons/logo.png" alt="لوگوی پایاکو"><div><h1>پیش‌فاکتور تعمیرات</h1><p>با شما تا اوج...</p></div></div><span class="ppm-status">${esc(pfState(p)[0])}</span></header>

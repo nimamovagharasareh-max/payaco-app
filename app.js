@@ -2658,7 +2658,7 @@
   function paginate(host, meta, company, head, blocks, opt = {}) {
     const pages = [];
     const newPage = () => {
-      const p = document.createElement("section"); p.className = "pp-page" + (opt.sign ? " compact" : "");
+      const p = document.createElement("section"); p.className = "pp-page" + (opt.sign ? " compact" : "") + (opt.proforma ? " proforma" : "");
       p.innerHTML = `${letterheadHtml(meta, company)}<div class="pp-body"></div>${opt.sign ? `<div class="pp-sign"><div>امضای پیمانکار</div><div>امضای کارفرما</div></div>` : ""}<div class="pp-no"></div>${opt.draft ? `<div class="pp-draft">پیش‌نویس — بدون شماره</div>` : ""}`;
       host.appendChild(p); pages.push(p); return p.querySelector(".pp-body");
     };
@@ -3014,27 +3014,75 @@
     };
   }
 
+  let publicProformaResponsiveCleanup = null;
+
+  function bindPublicProformaResponsiveView(root) {
+    if (publicProformaResponsiveCleanup) publicProformaResponsiveCleanup();
+
+    const update = () => {
+      if (!root || !root.isConnected) return;
+      const vv = window.visualViewport;
+      const width = vv && Number.isFinite(vv.width)
+        ? vv.width
+        : (document.documentElement.clientWidth || window.innerWidth);
+      document.body.classList.toggle("force-mobile-view", width < 768);
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", update);
+
+    publicProformaResponsiveCleanup = () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", update);
+      document.body.classList.remove("force-mobile-view");
+      publicProformaResponsiveCleanup = null;
+    };
+  }
+
   async function viewPublicProforma(code) {
+    if (publicProformaResponsiveCleanup) publicProformaResponsiveCleanup();
     $app.innerHTML = `<div class="loading">در حال بارگذاری…</div>`;
     let p;
     try { p = await publicRpc("get_proforma_by_code", { p_code: code }); } catch (e) {
       $app.innerHTML = `<div class="login-wrap"><div class="login-card"><h1>پیش‌فاکتور پیدا نشد</h1><p class="muted">لینک نادرست است. با دفتر پایاکو تماس بگیرید.</p></div></div>`; return;
     }
     const st = pfState(p), open = p.status === "issued" && !p.expired;
-    $app.innerHTML = `<main class="doc-page"><div class="pp-pages screen-doc"></div>
+    $app.innerHTML = `<main class="doc-page public-proforma"><div class="pp-pages screen-doc"></div><div class="ppm-view"></div>
       <div class="actions no-print doc-actions">${open ? `<button class="btn ok" data-act="pub-pf-approve">تأیید پیش‌فاکتور</button><button class="btn secondary" data-act="pub-pf-reject">رد</button>` : `<span class="badge ${st[1]}">${st[0]}</span>`}
       <button class="btn secondary" data-act="doc-print">چاپ / ذخیره PDF</button></div>
       ${open ? `<div class="hint no-print">اعتبار تا ${jtime(p.valid_until)}. می‌توانید فقط بخشی از ردیف‌ها را تأیید کنید. پس از تأیید و پرداخت، فاکتور صادر و تعمیر انجام می‌شود.</div>` : ""}
-      ${p.status === "approved" ? `<div class="hint">این پیش‌فاکتور در ${jtime(p.decided_at)} تأیید شد.</div>` : ""}</main>`;
-    const host = $app.querySelector(".pp-pages"); host.style.setProperty("--z", String(Math.min(1, (window.innerWidth - 16) / 794)));
+      ${p.status === "approved" ? `<div class="hint no-print">این پیش‌فاکتور در ${jtime(p.decided_at)} تأیید شد.</div>` : ""}</main>`;
+    const host = $app.querySelector(".pp-pages");
+    // Keep pagination at native A4 scale; apply phone preview zoom only afterwards.
     renderProformaPages(host, p);
-    $app.onclick = (e) => {
+    host.style.setProperty("--z", String(Math.min(1, (window.innerWidth - 16) / 794)));
+    renderProformaMobile($app.querySelector(".ppm-view"), p);
+    bindPublicProformaResponsiveView($app.querySelector(".doc-page"));
+    $app.onclick = async (e) => {
+      const copy = e.target.closest("[data-copy-value]");
+      if (copy) { e.preventDefault(); e.stopPropagation(); copyText(copy.dataset.copyValue); return; }
       const a = e.target.closest("[data-act]"); if (!a) return;
       if (a.dataset.act === "pub-pf-approve") sheetApproveProforma(p, () => { toast("تأیید شد؛ سپاسگزاریم"); viewPublicProforma(code); }, code);
       if (a.dataset.act === "pub-pf-reject") {
         const name = prompt("نام شما:"); if (!name) return;
         const note = prompt("دلیل رد (اختیاری):") || null;
         publicRpc("decide_proforma_by_code", { p_code: code, p_approve: false, p_rows: null, p_name: name, p_note: note }).then(() => { toast("رد شد"); viewPublicProforma(code); }).catch((er) => toast(er.message));
+      }
+      if (a.dataset.act === "pub-pf-copy") {
+        const value = a.dataset.copy || "";
+        const fallback = () => {
+          const input = document.createElement("textarea"); input.value = value; input.setAttribute("readonly", "");
+          input.style.position = "fixed"; input.style.opacity = "0"; document.body.appendChild(input); input.select();
+          const ok = document.execCommand("copy"); input.remove(); if (!ok) throw new Error("کپی در این مرورگر پشتیبانی نشد");
+        };
+        try {
+          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(value);
+          else fallback();
+          toast("در کلیپ‌بورد کپی شد");
+        } catch (err) { try { fallback(); toast("در کلیپ‌بورد کپی شد"); } catch (e2) { toast("کپی انجام نشد؛ متن را دستی انتخاب کنید"); } }
       }
       if (a.dataset.act === "doc-print") window.print();
     };
@@ -4067,8 +4115,11 @@
   /* print renderers on the letterhead: G04 statement, G06 repair invoice, G07 proforma */
   const tbl = (head, rows) => `<table class="pp-items"><thead><tr>${head.map(([h, w]) => `<th${w ? ` style="width:${w}"` : ""}>${h}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
   const sumTbl = (rows) => `<table class="pp-sum">${rows.map(([l, v, cls]) => `<tr class="${cls || ""}"><td>${l}</td><td class="n">${v}</td></tr>`).join("")}</table>`;
-  const ppBank = (c) => (c.card_no || c.sheba) ? `<div class="pp-box"><h3>اطلاعات واریز${c.bank ? " — " + esc(c.bank) : ""}${c.account_holder ? " — به نام " + esc(c.account_holder) : ""}</h3>
-    ${c.card_no ? `<div class="r"><span>شماره کارت</span><span class="pp-mono">${esc(groupCard(c.card_no))}</span></div>` : ""}${c.sheba ? `<div class="r"><span>شماره شبا</span><span class="pp-mono">${esc(toEn(c.sheba).toUpperCase())}</span></div>` : ""}</div>` : "";
+  const ppBank = (c) => {
+    const copyValue = (v) => `<span class="pp-mono pp-copy" role="button" tabindex="0" data-copy-value="${esc(String(v).replace(/\\s+/g, "").replace(/^IR/i, ""))}" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted">${esc(v)}</span>`;
+    return (c.card_no || c.account_no || c.sheba) ? `<div class="pp-box"><h3>اطلاعات واریز${c.bank ? " — " + esc(c.bank) : ""}${c.account_holder ? " — به نام " + esc(c.account_holder) : ""}</h3>
+    ${c.card_no ? `<div class="r"><span>شماره کارت</span>${copyValue(toEn(c.card_no).replace(/\\D/g, ""))}</div>` : ""}${c.account_no ? `<div class="r"><span>شماره حساب</span>${copyValue(toEn(c.account_no))}</div>` : ""}${c.sheba ? `<div class="r"><span>شماره شبا</span>${copyValue(toEn(c.sheba).toUpperCase())}</div>` : ""}</div>` : "";
+  };
   const ppInfo = (rows) => `<table class="pp-info">${rows.map((r) => `<tr>${r.map(([k, v], i) => `<td class="k">${k}</td><td${r.length === 1 ? ' colspan="3"' : ""}>${v}</td>`).join("")}</tr>`).join("")}</table>`;
   function renderProformaPages(host, p) {
     const c = p.company || {};
@@ -4079,9 +4130,34 @@
       tbl([["ردیف", "9mm"], ["شرح کالا / خدمات"], ["تعداد", "14mm"], ["واحد", "14mm"], ["فی (ریال)", "28mm"], ["مبلغ (ریال)", "30mm"]], rows) +
       sumTbl([["جمع", num(p.subtotal)], ...(p.discount ? [["تخفیف", "−" + num(p.discount)]] : []), ["مالیات بر ارزش افزوده" + (p.vat_exempt ? " (معاف)" : ` ${fa(Number(p.vat_rate))}٪`), num(p.vat)], ["جمع کل پیش‌فاکتور", num(p.total), "pay"]]),
       `<div class="pp-words">به حروف: <b>${numWords(p.total)} ریال</b> (معادل ${num(Math.round(p.total / 10))} تومان)</div>`,
+      ppBank(c),
       `<div class="pp-box y"><h3>شرایط</h3><div>۱. طبق قرارداد سرویس و نگهداری، هزینه‌ی تعمیرات کلی از راه پیش‌فاکتور اعلام می‌شود و پس از تأیید کارفرما، تعمیر انجام می‌گیرد.</div>
         <div>۲. این پیش‌فاکتور سند بدهی نیست؛ با تأیید، فاکتور تعمیرات صادر و در حساب ثبت می‌شود.</div><div>۳. این پیش‌فاکتور ۷۲ ساعت از زمان صدور معتبر است.</div></div>`,
-      `<div class="pp-signs"><div><b>تأیید کارفرما</b>با شرح و مبلغ بالا موافقم. نام، تاریخ و امضا</div><div><b>پایاکو</b>مهر و امضا</div></div>`], {});
+      { html: `<div class="pp-signs"><div><b>تأیید کارفرما</b>با شرح و مبلغ بالا موافقم. نام، تاریخ و امضا</div><div><b>پایاکو</b>مهر و امضا</div></div>`, fit: true }], { proforma: true });
+  }
+  function renderProformaMobile(host, p) {
+    const c = p.company || {}, b = p.building || {}, contract = p.contract || {};
+    const rows = (p.items || []).map((it, i) => `<article class="ppm-item">
+      <div class="ppm-item-head"><b>${fa(i + 1)}. ${esc(it.description || "")}</b><strong>${num(it.amount)} ریال</strong></div>
+      <div class="ppm-item-meta"><span>تعداد: ${fa(it.qty)}</span><span>واحد: ${esc(it.unit || "—")}</span><span>فی: ${num(it.unit_price)} ریال</span></div>
+    </article>`).join("");
+    const copyRow = (label, value, display = value) => `<div class="ppm-bank-row"><span>${label}</span><div class="ppm-bank-value"><bdi dir="ltr">${esc(display)}</bdi><button type="button" class="ppm-copy no-print" data-act="pub-pf-copy" data-copy="${esc(value)}" aria-label="کپی ${label}">کپی</button></div></div>`;
+    const bank = (c.card_no || c.account_no || c.sheba) ? `<section class="ppm-card ppm-bank"><h2>اطلاعات واریز${c.bank ? " · " + esc(c.bank) : ""}</h2>
+      ${c.account_holder ? `<p class="ppm-holder">به نام: <b>${esc(c.account_holder)}</b></p>` : ""}
+      ${c.card_no ? copyRow("شماره کارت", toEn(c.card_no).replace(/[^0-9]/g, ""), groupCard(c.card_no)) : ""}
+      ${c.account_no ? copyRow("شماره حساب", toEn(c.account_no).replace(/[^0-9]/g, ""), toEn(c.account_no)) : ""}
+      ${c.sheba ? copyRow("شماره شبا", toEn(c.sheba).replace(/[^0-9A-Za-z]/g, "").toUpperCase(), toEn(c.sheba).toUpperCase()) : ""}
+    </section>` : "";
+    host.innerHTML = `<article class="ppm-card ppm-document" dir="rtl">
+      <header class="ppm-head"><div class="ppm-brand-lockup"><img class="ppm-logo" src="icons/logo.png" alt="لوگوی پایاکو"><div><h1>پیش‌فاکتور تعمیرات</h1><p>با شما تا اوج...</p></div></div><span class="ppm-status">${esc(pfState(p)[0])}</span></header>
+      <div class="ppm-meta"><div><span>شماره</span><bdi dir="ltr">${esc(fa(p.number || "—"))}</bdi></div><div><span>تاریخ صدور</span><b>${jdateTz(p.issued_at)}</b></div><div><span>اعتبار تا</span><b>${jtime(p.valid_until)}</b></div></div>
+      <section class="ppm-card"><h2>مشخصات</h2><div class="ppm-kv"><span>مشترک</span><b>${esc(b.name || "")}</b></div><div class="ppm-kv"><span>شماره قرارداد</span><bdi dir="ltr">${esc(fa(contract.code || ""))}</bdi></div>${p.subject ? `<div class="ppm-kv"><span>موضوع</span><b>${esc(p.subject)}</b></div>` : ""}</section>
+      <section class="ppm-card"><h2>شرح کالا و خدمات</h2>${rows || '<p class="muted">ردیفی ثبت نشده است</p>'}</section>
+      <section class="ppm-card ppm-totals"><div class="ppm-kv"><span>جمع</span><b>${num(p.subtotal)} ریال</b></div>${p.discount ? `<div class="ppm-kv"><span>تخفیف</span><b>${num(p.discount)} ریال</b></div>` : ""}<div class="ppm-kv"><span>مالیات بر ارزش افزوده${p.vat_exempt ? " (معاف)" : ` · ${fa(Number(p.vat_rate))}٪`}</span><b>${num(p.vat)} ریال</b></div><div class="ppm-total"><span>جمع کل</span><b>${num(p.total)} ریال</b></div><p>معادل ${num(Math.round(p.total / 10))} تومان</p></section>
+      ${bank}
+      <section class="ppm-card"><h2>شرایط</h2><ol><li>هزینه‌ی تعمیرات پس از تأیید کارفرما انجام می‌شود.</li><li>این پیش‌فاکتور سند بدهی نیست؛ با تأیید، فاکتور تعمیرات صادر و در حساب ثبت می‌شود.</li><li>اعتبار پیش‌فاکتور ۷۲ ساعت از زمان صدور است.</li></ol></section>
+      <footer class="ppm-sign"><div><b>تأیید کارفرما</b><span>نام، تاریخ و امضا</span></div><div><b>پایاکو</b><span>مهر و امضا</span></div></footer>
+    </article>`;
   }
   function renderInvoicePages(host, d) {
     const c = d.company || {}, st = d.type === "statement" || d.type === "opening_balance";
@@ -4182,7 +4258,7 @@
     const qc = new URLSearchParams(location.search).get("c");
     if (qc && /^[a-zA-Z0-9]{6,16}$/.test(qc) && !location.hash) { history.replaceState(null, "", location.pathname + "#/c/" + qc); return viewPublicDoc(null, qc); }
     const qp = new URLSearchParams(location.search).get("p");
-    if (qp && /^[a-zA-Z0-9]{6,16}$/.test(qp) && !location.hash) { history.replaceState(null, "", location.pathname + "#/pf/" + qp); return viewPublicProforma(qp); }
+    if (qp && /^[a-zA-Z0-9]{6,16}$/.test(qp) && (!location.hash || location.hash === "#/")) { history.replaceState(null, "", location.pathname + "#/pf/" + qp); return viewPublicProforma(qp); }
     const qv = new URLSearchParams(location.search).get("v");
     if (qv && /^[a-zA-Z0-9]{6,16}$/.test(qv) && !location.hash) { history.replaceState(null, "", location.pathname + "#/sv/" + qv); return viewPublicService(qv); }
     const sv = location.hash.match(/^#\/sv\/([a-zA-Z0-9]{6,16})$/);
